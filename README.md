@@ -52,4 +52,6 @@ npm run web      # Open in browser
 npx expo start -c
 ```
 
+- downloda expo go application from appstore of playstore
+
 - If dependencies change, run `npm install` again.
