@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -17,17 +17,33 @@ import TextInputField from '../components/TextInputField';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { spacing } from '../theme/spacing';
+import { SCREENS } from '../constants';
+import { useAuth } from '../context/AuthContext';
 
-const ProfileSetupScreen = ({ navigation }) => {
+const ProfileSetupScreen = ({ navigation, route }: any) => {
+  const { user, updateUser } = useAuth();
   const [name, setName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const prefillName: string = route?.params?.prefillName ?? user?.displayName ?? '';
 
-  const handleContinue = () => {
-    if (name.trim().length > 0) {
-      Alert.alert(
-        '🎉 Profile Created!',
-        `Welcome to UniChat, ${name.trim()}! Your profile is all set.`,
-        [{ text: 'Awesome!', style: 'default' }]
-      );
+  useEffect(() => {
+    if (prefillName) {
+      setName(prefillName);
+    }
+  }, [prefillName]);
+
+  const handleContinue = async () => {
+    const trimmed = name.trim();
+    if (trimmed.length === 0) return;
+
+    setLoading(true);
+    try {
+      await updateUser({ displayName: trimmed });
+      navigation.reset({ index: 0, routes: [{ name: SCREENS.HOME }] });
+    } catch {
+      Alert.alert('Error', 'Failed to save your profile. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -46,6 +62,7 @@ const ProfileSetupScreen = ({ navigation }) => {
           <TouchableOpacity
             style={styles.backBtn}
             onPress={() => navigation.goBack()}
+            disabled={loading}
           >
             <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
           </TouchableOpacity>
@@ -59,7 +76,6 @@ const ProfileSetupScreen = ({ navigation }) => {
           {/* Profile photo area */}
           <View style={styles.photoSection}>
             <TouchableOpacity style={styles.photoWrapper} activeOpacity={0.85}>
-              {/* Placeholder gradient avatar */}
               <LinearGradient
                 colors={['#C7D2FE', '#DDD6FE']}
                 style={styles.photoPlaceholder}
@@ -67,7 +83,6 @@ const ProfileSetupScreen = ({ navigation }) => {
                 <Ionicons name="person" size={56} color={colors.primary} />
               </LinearGradient>
 
-              {/* Camera overlay badge */}
               <LinearGradient
                 colors={[colors.gradientStart, colors.gradientEnd]}
                 style={styles.cameraBadge}
@@ -90,6 +105,7 @@ const ProfileSetupScreen = ({ navigation }) => {
               onChangeText={setName}
               autoCapitalize="words"
               maxLength={40}
+              editable={!loading}
               leftElement={
                 <Ionicons
                   name="person-outline"
@@ -99,15 +115,14 @@ const ProfileSetupScreen = ({ navigation }) => {
               }
             />
 
-            {/* Continue button */}
             <PrimaryButton
               title="Continue"
               onPress={handleContinue}
-              disabled={name.trim().length === 0}
+              disabled={name.trim().length === 0 || loading}
+              loading={loading}
               style={styles.ctaButton}
             />
 
-            {/* Helper text */}
             <View style={styles.helperRow}>
               <Ionicons
                 name="information-circle-outline"

@@ -13,4 +13,5 @@ export const SCREENS = {
   LOGIN: 'Login',
   OTP: 'OTP',
   PROFILE_SETUP: 'ProfileSetup',
+  HOME: 'Home',
 };

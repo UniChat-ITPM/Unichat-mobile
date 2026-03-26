@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import PrimaryButton from '../components/PrimaryButton';
@@ -16,23 +17,64 @@ import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { spacing } from '../theme/spacing';
 import { OTP_LENGTH, SCREENS } from '../constants';
+import { useAuth } from '../context/AuthContext';
+import { requestOtp } from '../services/auth';
+import { isValidOtp } from '../utils/validators';
 
-// Mask a phone like "+94 77 123 4567" -> "+94 7X XXX XXXX"
-const maskPhone = (phone = '') => {
-  if (!phone) return '+94 7X XXX XXXX';
-  const digits = phone.replace(/\D/g, '');
-  const last = digits.slice(-4);
-  const country = phone.split(' ')[0] || '+94';
-  return `${country} 7X XXX ${last}`;
+/** Mask phone for display: "+94771234567" → "+94 *** *** 4567" */
+const maskPhone = (phone: string) => {
+  if (!phone || phone.length < 8) return phone;
+  const last4 = phone.slice(-4);
+  const countryCode = phone.slice(0, phone.length - 9);
+  return `${countryCode} *** *** ${last4}`;
 };
 
-const OTPScreen = ({ navigation, route }) => {
-  const [otp, setOtp] = useState('');
-  const phone = route?.params?.phone || '+94 7X XXX XXXX';
+const OTPScreen = ({ navigation, route }: any) => {
+  const { loginWithOtp } = useAuth();
 
-  const handleVerify = () => {
-    if (otp.length === OTP_LENGTH) {
-      navigation.navigate(SCREENS.PROFILE_SETUP);
+  const phone: string = route?.params?.phone ?? '';
+  const [otp, setOtp] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [error, setError] = useState('');
+
+  const isOtpReady = isValidOtp(otp);
+
+  const handleVerify = async () => {
+    setError('');
+
+    if (!isOtpReady) {
+      setError('Please enter a valid 6-digit code.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await loginWithOtp(phone, otp);
+      const prefillName = response.isNewUser ? '' : response.user?.displayName ?? '';
+      navigation.replace(SCREENS.PROFILE_SETUP, { prefillName });
+    } catch (err: any) {
+      const message = err?.friendlyMessage ?? err?.message ?? 'Verification failed. Please try again.';
+      setError(message);
+      Alert.alert('Verification Failed', message);
+      setOtp('');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (resending) return;
+    setResending(true);
+    setError('');
+    try {
+      await requestOtp(phone);
+      Alert.alert('Code Sent', 'A new verification code has been sent to your phone.');
+    } catch (err: any) {
+      const message = err.friendlyMessage ?? 'Failed to resend code.';
+      Alert.alert('Error', message);
+    } finally {
+      setResending(false);
     }
   };
 
@@ -51,6 +93,7 @@ const OTPScreen = ({ navigation, route }) => {
           <TouchableOpacity
             style={styles.backBtn}
             onPress={() => navigation.goBack()}
+            disabled={loading}
           >
             <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
           </TouchableOpacity>
@@ -74,19 +117,34 @@ const OTPScreen = ({ navigation, route }) => {
             <OTPInput value={otp} onChange={setOtp} length={OTP_LENGTH} />
           </View>
 
+          {/* Error message */}
+          {error ? (
+            <View style={styles.errorRow}>
+              <Ionicons name="alert-circle" size={16} color={colors.error} />
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : null}
+
           {/* Verify button */}
           <PrimaryButton
             title="Verify"
             onPress={handleVerify}
-            disabled={otp.length < OTP_LENGTH}
+            disabled={!isOtpReady || loading}
+            loading={loading}
             style={styles.verifyBtn}
           />
 
           {/* Secondary actions */}
           <View style={styles.secondaryActions}>
-            <TouchableOpacity style={styles.textAction}>
-              <Ionicons name="refresh" size={15} color={colors.primary} />
-              <Text style={styles.textActionLabel}>Resend code</Text>
+            <TouchableOpacity
+              style={styles.textAction}
+              onPress={handleResend}
+              disabled={resending || loading}
+            >
+              <Ionicons name="refresh" size={15} color={resending ? colors.textMuted : colors.primary} />
+              <Text style={[styles.textActionLabel, resending && { color: colors.textMuted }]}>
+                {resending ? 'Sending…' : 'Resend code'}
+              </Text>
             </TouchableOpacity>
 
             <View style={styles.divider} />
@@ -94,20 +152,13 @@ const OTPScreen = ({ navigation, route }) => {
             <TouchableOpacity
               style={styles.textAction}
               onPress={() => navigation.goBack()}
+              disabled={loading}
             >
               <Ionicons name="pencil" size={15} color={colors.textSecondary} />
               <Text style={[styles.textActionLabel, { color: colors.textSecondary }]}>
                 Change phone number
               </Text>
             </TouchableOpacity>
-          </View>
-
-          {/* Info note */}
-          <View style={styles.noteBox}>
-            <Ionicons name="information-circle" size={16} color={colors.primaryLight} />
-            <Text style={styles.noteText}>
-              OTP verification is bypassed in demo mode. Enter any 6 digits to continue.
-            </Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -183,7 +234,19 @@ const styles = StyleSheet.create({
   },
   otpSection: {
     width: '100%',
-    marginBottom: spacing.xxl,
+    marginBottom: spacing.xl,
+  },
+  errorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.base,
+    paddingHorizontal: spacing.sm,
+  },
+  errorText: {
+    fontSize: typography.fontSizeSM,
+    color: colors.error,
+    flex: 1,
   },
   verifyBtn: {
     width: '100%',
@@ -209,22 +272,6 @@ const styles = StyleSheet.create({
     width: 1,
     height: 16,
     backgroundColor: colors.border,
-  },
-  noteBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    backgroundColor: '#EEF2FF',
-    borderRadius: 14,
-    padding: spacing.md,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.primary,
-  },
-  noteText: {
-    flex: 1,
-    fontSize: typography.fontSizeXS,
-    color: colors.textSecondary,
-    lineHeight: 18,
   },
 });
 
