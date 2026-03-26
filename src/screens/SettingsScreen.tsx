@@ -1,0 +1,254 @@
+import React from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  SafeAreaView,
+  ScrollView,
+  TouchableOpacity,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { colors } from '../theme/colors';
+import { typography } from '../theme/typography';
+import { spacing } from '../theme/spacing';
+import { SCREENS } from '../constants';
+
+const SettingsRow = ({ icon, title, subtitle, onPress, iconColor = colors.primary, showRightArrow = true }) => (
+  <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
+    <View style={[styles.iconContainer, { backgroundColor: iconColor + '15' }]}>
+      <Ionicons name={icon} size={22} color={iconColor} />
+    </View>
+    <View style={styles.rowContent}>
+      <Text style={styles.rowTitle}>{title}</Text>
+      {subtitle && <Text style={styles.rowSubtitle}>{subtitle}</Text>}
+    </View>
+    {showRightArrow && (
+      <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+    )}
+  </TouchableOpacity>
+);
+
+const SettingsScreen = ({ navigation }) => {
+  return (
+    <SafeAreaView style={styles.safe}>
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Settings</Text>
+        <View style={{ width: 44 }} />
+      </View>
+
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Profile Section */}
+        <TouchableOpacity 
+          style={styles.profileCard} 
+          activeOpacity={0.8}
+          onPress={() => navigation.navigate(SCREENS.PROFILE_SETUP)}
+        >
+          <LinearGradient
+            colors={['#C7D2FE', '#DDD6FE']}
+            style={styles.profileAvatar}
+          >
+            <Ionicons name="person" size={40} color={colors.primary} />
+          </LinearGradient>
+          <View style={styles.profileInfo}>
+            <Text style={styles.profileName}>John Doe</Text>
+            <Text style={styles.profilePhone}>+94 77 123 4567</Text>
+          </View>
+          <View style={styles.editBtn}>
+            <Ionicons name="pencil" size={16} color={colors.primary} />
+          </View>
+        </TouchableOpacity>
+
+        {/* Settings Lists */}
+        <Text style={styles.sectionTitle}>Account</Text>
+        <View style={styles.card}>
+          <SettingsRow
+            icon="person-circle-outline"
+            title="Account"
+            subtitle="Account info, change number"
+            onPress={() => navigation.navigate(SCREENS.ACCOUNT_SETTINGS)}
+          />
+          <View style={styles.divider} />
+          <SettingsRow
+            icon="shield-checkmark-outline"
+            title="Privacy & Safety"
+            subtitle="Blocked users, account status"
+            onPress={() => navigation.navigate(SCREENS.PRIVACY_SAFETY)}
+          />
+        </View>
+
+        <Text style={styles.sectionTitle}>General</Text>
+        <View style={styles.card}>
+          <SettingsRow
+            icon="notifications-outline"
+            title="Notifications"
+            subtitle="Message & group tones"
+            onPress={() => navigation.navigate(SCREENS.NOTIFICATIONS_SETTINGS)}
+          />
+          <View style={styles.divider} />
+          <SettingsRow
+            icon="server-outline"
+            title="Storage & Data"
+            subtitle="Media storage, clear cache"
+            onPress={() => navigation.navigate(SCREENS.STORAGE_DATA)}
+          />
+        </View>
+
+        <Text style={styles.sectionTitle}>Support</Text>
+        <View style={styles.card}>
+          <SettingsRow
+            icon="help-circle-outline"
+            title="Help & Support"
+            subtitle="Help center, contact support"
+            onPress={() => navigation.navigate(SCREENS.HELP_SUPPORT)}
+          />
+        </View>
+
+        <View style={{ height: spacing.xxxl }} />
+      </ScrollView>
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.backgroundSecondary },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.base,
+    paddingBottom: spacing.sm,
+  },
+  headerTitle: {
+    fontSize: typography.fontSizeXL,
+    fontWeight: typography.fontWeightBold,
+    color: colors.textPrimary,
+  },
+  backBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  scroll: {
+    flexGrow: 1,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.base,
+    paddingBottom: spacing.xxxl,
+  },
+  profileCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderRadius: 28,
+    padding: spacing.lg,
+    marginBottom: spacing.xxl,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.07,
+    shadowRadius: 20,
+    elevation: 5,
+  },
+  profileAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  profileInfo: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  profileName: {
+    fontSize: typography.fontSizeLG,
+    fontWeight: typography.fontWeightBold,
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  profilePhone: {
+    fontSize: typography.fontSizeSM,
+    color: colors.textSecondary,
+  },
+  editBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sectionTitle: {
+    fontSize: typography.fontSizeSM,
+    fontWeight: typography.fontWeightSemiBold,
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: spacing.sm,
+    marginLeft: spacing.base,
+  },
+  card: {
+    backgroundColor: colors.background,
+    borderRadius: 24,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.xl,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.base,
+  },
+  iconContainer: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  rowContent: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  rowTitle: {
+    fontSize: typography.fontSizeMD,
+    fontWeight: typography.fontWeightSemiBold,
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  rowSubtitle: {
+    fontSize: typography.fontSizeSM,
+    color: colors.textSecondary,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginLeft: 42 + spacing.md + spacing.base,
+  },
+});
+
+export default SettingsScreen;

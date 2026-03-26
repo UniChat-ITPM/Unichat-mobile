@@ -9,6 +9,12 @@ import LoginScreen from "../screens/LoginScreen";
 import OTPScreen from "../screens/OTPScreen";
 import ProfileSetupScreen from "../screens/ProfileSetupScreen";
 import HomeScreen from "../screens/HomeScreen";
+import SettingsScreen from '../screens/SettingsScreen';
+import AccountSettingsScreen from '../screens/AccountSettingsScreen';
+import PrivacySafetyScreen from '../screens/PrivacySafetyScreen';
+import NotificationsSettingsScreen from '../screens/NotificationsSettingsScreen';
+import StorageDataScreen from '../screens/StorageDataScreen';
+import HelpSupportScreen from '../screens/HelpSupportScreen';
 import { SCREENS } from "../constants";
 import { useAuth } from "../context/AuthContext";
 import { colors } from "../theme/colors";
@@ -46,7 +52,15 @@ const AppNavigator = () => {
       }}
     >
       {isAuthenticated ? (
-        <Stack.Screen name={SCREENS.HOME} component={HomeScreen} />
+        <>
+          <Stack.Screen name={SCREENS.HOME} component={HomeScreen} />
+          <Stack.Screen name={SCREENS.SETTINGS} component={SettingsScreen} />
+          <Stack.Screen name={SCREENS.ACCOUNT_SETTINGS} component={AccountSettingsScreen} />
+          <Stack.Screen name={SCREENS.PRIVACY_SAFETY} component={PrivacySafetyScreen} />
+          <Stack.Screen name={SCREENS.NOTIFICATIONS_SETTINGS} component={NotificationsSettingsScreen} />
+          <Stack.Screen name={SCREENS.STORAGE_DATA} component={StorageDataScreen} />
+          <Stack.Screen name={SCREENS.HELP_SUPPORT} component={HelpSupportScreen} />
+        </>
       ) : (
         <>
           <Stack.Screen

@@ -13,5 +13,11 @@ export const SCREENS = {
   LOGIN: 'Login',
   OTP: 'OTP',
   PROFILE_SETUP: 'ProfileSetup',
+  SETTINGS: 'Settings',
+  ACCOUNT_SETTINGS: 'AccountSettings',
+  PRIVACY_SAFETY: 'PrivacySafety',
+  NOTIFICATIONS_SETTINGS: 'NotificationsSettings',
+  STORAGE_DATA: 'StorageData',
+  HELP_SUPPORT: 'HelpSupport',
   HOME: 'Home',
 };
