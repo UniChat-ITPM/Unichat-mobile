@@ -5,9 +5,9 @@ import {
   StyleSheet,
   SafeAreaView,
   ScrollView,
-  TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,13 +17,35 @@ import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { spacing } from '../theme/spacing';
 import { APP_NAME, DEFAULT_COUNTRY_CODE, DEFAULT_COUNTRY_FLAG, SCREENS } from '../constants';
+import { requestOtp } from '../services/auth';
+import { toE164, isValidE164 } from '../utils/validators';
 
-const LoginScreen = ({ navigation }) => {
+const LoginScreen = ({ navigation }: any) => {
   const [phone, setPhone] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSendOTP = () => {
-    if (phone.trim().length > 0) {
-      navigation.navigate(SCREENS.OTP, { phone: `${DEFAULT_COUNTRY_CODE} ${phone}` });
+  const fullNumber = toE164(phone, DEFAULT_COUNTRY_CODE);
+  const isPhoneValid = phone.trim().length >= 7 && isValidE164(fullNumber);
+
+  const handleSendOTP = async () => {
+    setError('');
+
+    if (!isPhoneValid) {
+      setError('Please enter a valid phone number.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await requestOtp(fullNumber);
+      navigation.navigate(SCREENS.OTP, { phone: fullNumber });
+    } catch (err: any) {
+      const message = err.friendlyMessage ?? 'Failed to send OTP. Please try again.';
+      setError(message);
+      Alert.alert('Error', message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -59,22 +81,25 @@ const LoginScreen = ({ navigation }) => {
             {/* Country code + Phone input */}
             <Text style={styles.fieldLabel}>PHONE NUMBER</Text>
             <View style={styles.phoneRow}>
-              {/* Country code badge */}
               <View style={styles.countryBadge}>
                 <Text style={styles.countryFlag}>{DEFAULT_COUNTRY_FLAG}</Text>
                 <Text style={styles.countryCode}>{DEFAULT_COUNTRY_CODE}</Text>
                 <Ionicons name="chevron-down" size={14} color={colors.textSecondary} />
               </View>
 
-              {/* Phone input */}
               <View style={styles.phoneInputWrapper}>
                 <TextInputField
                   placeholder="7X XXX XXXX"
                   value={phone}
-                  onChangeText={setPhone}
+                  onChangeText={(text: string) => {
+                    setPhone(text);
+                    if (error) setError('');
+                  }}
                   keyboardType="phone-pad"
                   maxLength={10}
                   style={styles.phoneInput}
+                  errorText={error}
+                  editable={!loading}
                 />
               </View>
             </View>
@@ -91,7 +116,8 @@ const LoginScreen = ({ navigation }) => {
             <PrimaryButton
               title="Send OTP"
               onPress={handleSendOTP}
-              disabled={phone.trim().length < 7}
+              disabled={!isPhoneValid || loading}
+              loading={loading}
               style={styles.ctaButton}
             />
           </View>
