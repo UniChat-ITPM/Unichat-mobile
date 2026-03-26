@@ -22,4 +22,4 @@ export const typography = {
   letterSpacingNormal: 0,
   letterSpacingWide: 0.5,
   letterSpacingWidest: 2,
-};
+} as const;
