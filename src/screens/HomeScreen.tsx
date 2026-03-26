@@ -14,6 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { spacing } from '../theme/spacing';
+import { SCREENS } from '../constants';
 
 type ChatPreview = {
   id: string;
@@ -62,7 +63,7 @@ const DEMO_CHATS: ChatPreview[] = [
   },
 ];
 
-const HomeScreen = () => {
+const HomeScreen = ({ navigation }: { navigation: any }) => {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<HomeTabKey>('chats');
 
@@ -107,7 +108,16 @@ const HomeScreen = () => {
         />
       </View>
 
-      <BottomTabBar activeTab={activeTab} onTabPress={setActiveTab} />
+      <BottomTabBar
+        activeTab={activeTab}
+        onTabPress={(tab) => {
+          if (tab === 'settings') {
+            navigation.navigate(SCREENS.SETTINGS);
+          } else {
+            setActiveTab(tab);
+          }
+        }}
+      />
     </SafeAreaView>
   );
 };

@@ -52,7 +52,15 @@ const AppNavigator = () => {
       }}
     >
       {isAuthenticated ? (
-        <Stack.Screen name={SCREENS.HOME} component={HomeScreen} />
+        <>
+          <Stack.Screen name={SCREENS.HOME} component={HomeScreen} />
+          <Stack.Screen name={SCREENS.SETTINGS} component={SettingsScreen} />
+          <Stack.Screen name={SCREENS.ACCOUNT_SETTINGS} component={AccountSettingsScreen} />
+          <Stack.Screen name={SCREENS.PRIVACY_SAFETY} component={PrivacySafetyScreen} />
+          <Stack.Screen name={SCREENS.NOTIFICATIONS_SETTINGS} component={NotificationsSettingsScreen} />
+          <Stack.Screen name={SCREENS.STORAGE_DATA} component={StorageDataScreen} />
+          <Stack.Screen name={SCREENS.HELP_SUPPORT} component={HelpSupportScreen} />
+        </>
       ) : (
         <>
           <Stack.Screen
@@ -73,12 +81,6 @@ const AppNavigator = () => {
             name={SCREENS.PROFILE_SETUP}
             component={ProfileSetupScreen}
           />
-      <Stack.Screen name={SCREENS.SETTINGS} component={SettingsScreen} />
-      <Stack.Screen name={SCREENS.ACCOUNT_SETTINGS} component={AccountSettingsScreen} />
-      <Stack.Screen name={SCREENS.PRIVACY_SAFETY} component={PrivacySafetyScreen} />
-      <Stack.Screen name={SCREENS.NOTIFICATIONS_SETTINGS} component={NotificationsSettingsScreen} />
-      <Stack.Screen name={SCREENS.STORAGE_DATA} component={StorageDataScreen} />
-      <Stack.Screen name={SCREENS.HELP_SUPPORT} component={HelpSupportScreen} />
         </>
       )}
     </Stack.Navigator>
