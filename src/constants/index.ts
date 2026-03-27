@@ -19,5 +19,8 @@ export const SCREENS = {
   NOTIFICATIONS_SETTINGS: 'NotificationsSettings',
   STORAGE_DATA: 'StorageData',
   HELP_SUPPORT: 'HelpSupport',
+  EDIT_PROFILE: 'EditProfile',
   HOME: 'Home',
+  CHAT: 'Chat',
+  PARTICIPANT_PROFILE: 'ParticipantProfile',
 };

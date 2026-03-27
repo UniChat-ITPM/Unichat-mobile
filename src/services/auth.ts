@@ -6,6 +6,8 @@ import {
   VerifyOtpResponse,
   CompleteProfilePayload,
   CompleteProfileResponse,
+  UpdateUserPayload,
+  UpdateUserResponse,
   User,
 } from '../types/auth';
 
@@ -21,6 +23,7 @@ const AUTH_ENDPOINTS = {
   REQUEST_OTP: '/auth/otp/request',
   VERIFY_OTP: '/auth/otp/verify',
   COMPLETE_PROFILE: '/auth/register/complete',
+  UPDATE_USER: '/user',
 } as const;
 
 /**
@@ -106,4 +109,19 @@ export async function completeProfile(
     },
   );
   return data;
+}
+
+/**
+ * Update an existing user's profile fields.
+ * Only non-undefined fields in the payload are sent to the backend.
+ */
+export async function updateUserById(
+  userId: string,
+  payload: UpdateUserPayload,
+): Promise<UpdateUserResponse> {
+  const { data } = await apiClient.put<UpdateUserResponse>(
+    `${AUTH_ENDPOINTS.UPDATE_USER}/${userId}`,
+    payload,
+  );
+  return { ...data, user: normalizeUser(data.user) };
 }

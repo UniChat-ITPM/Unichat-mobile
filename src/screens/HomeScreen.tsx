@@ -4,10 +4,12 @@ import {
   Text,
   Image,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   FlatList,
+  TextInput,
+  ScrollView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import ChatListItem from '../components/ChatListItem';
 import BottomTabBar, { HomeTabKey } from '../components/BottomTabBar';
@@ -26,6 +28,8 @@ type ChatPreview = {
   unreadCount: number;
   isOnline?: boolean;
   avatarColor?: string;
+  isGroup?: boolean;
+  isFavorite?: boolean;
 };
 
 const DEMO_CHATS: ChatPreview[] = [
@@ -37,6 +41,8 @@ const DEMO_CHATS: ChatPreview[] = [
     unreadCount: 4,
     isOnline: true,
     avatarColor: '#E0E7FF',
+    isGroup: true,
+    isFavorite: true,
   },
   {
     id: '2',
@@ -46,6 +52,7 @@ const DEMO_CHATS: ChatPreview[] = [
     unreadCount: 1,
     isOnline: true,
     avatarColor: '#F3E8FF',
+    isFavorite: true,
   },
   {
     id: '3',
@@ -54,6 +61,7 @@ const DEMO_CHATS: ChatPreview[] = [
     timeLabel: 'Yesterday',
     unreadCount: 0,
     avatarColor: '#DBEAFE',
+    isGroup: true,
   },
   {
     id: '4',
@@ -65,40 +73,130 @@ const DEMO_CHATS: ChatPreview[] = [
   },
 ];
 
+type FilterKey = 'all' | 'unread' | 'favorites' | 'groups';
+
+const FILTERS: Array<{ key: FilterKey; label: string }> = [
+  { key: 'all', label: 'All' },
+  { key: 'unread', label: 'Unread' },
+  { key: 'favorites', label: 'Favorites' },
+  { key: 'groups', label: 'Groups' },
+];
+
 const HomeScreen = ({ navigation }: { navigation: any }) => {
   const { user, logout } = useAuth();
   const avatarUri = getProfileImageUrl(user);
   const [activeTab, setActiveTab] = useState<HomeTabKey>('chats');
+  const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
+  const [searchText, setSearchText] = useState('');
 
   const chats = useMemo(() => DEMO_CHATS, []);
-  const unreadTotal = chats.reduce((acc, chat) => acc + chat.unreadCount, 0);
+  const chatsForTab = useMemo(() => {
+    if (activeTab === 'groups') {
+      return chats.filter((c) => c.isGroup);
+    }
+    return chats;
+  }, [activeTab, chats]);
+
+  const visibleFilters = useMemo(() => {
+    if (activeTab === 'groups') {
+      return FILTERS.filter((f) => f.key !== 'groups');
+    }
+    return FILTERS;
+  }, [activeTab]);
+
+  const unreadTotal = chatsForTab.reduce((acc, chat) => acc + chat.unreadCount, 0);
+  const filteredChats = useMemo(() => {
+    const normalizedSearch = searchText.trim().toLowerCase();
+
+    return chatsForTab.filter((chat) => {
+      const filterMatch =
+        activeFilter === 'all'
+          ? true
+          : activeFilter === 'unread'
+          ? chat.unreadCount > 0
+          : activeFilter === 'favorites'
+          ? Boolean(chat.isFavorite)
+          : Boolean(chat.isGroup);
+
+      if (!filterMatch) {
+        return false;
+      }
+
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      return (
+        chat.name.toLowerCase().includes(normalizedSearch) ||
+        chat.lastMessage.toLowerCase().includes(normalizedSearch)
+      );
+    });
+  }, [activeFilter, chatsForTab, searchText]);
+
+  const screenTitle =
+    activeTab === 'groups' ? 'Groups' : activeTab === 'calls' ? 'Calls' : 'Chats';
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.title}>UniChat</Text>
-            <Text style={styles.subtitle}>Hi {user?.displayName ?? 'there'}, welcome back</Text>
+        <View style={styles.topBar}>
+          <Text style={styles.title}>{screenTitle}</Text>
+          <View style={styles.topActions}>
+            <TouchableOpacity style={styles.actionButton} activeOpacity={0.85}>
+              <Ionicons name="camera-outline" size={20} color={colors.textPrimary} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionButtonPrimary} activeOpacity={0.85}>
+              <Ionicons name="add" size={20} color={colors.textLight} />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.headerIcon} activeOpacity={0.85} onPress={logout}>
+        </View>
+
+        <View style={styles.searchRow}>
+          <View style={styles.searchContainer}>
+            <Ionicons name="search-outline" size={18} color={colors.textMuted} />
+            <TextInput
+              value={searchText}
+              onChangeText={setSearchText}
+              placeholder="Search"
+              placeholderTextColor={colors.textMuted}
+              style={styles.searchInput}
+            />
+          </View>
+          <TouchableOpacity style={styles.profileButton} activeOpacity={0.85} onPress={logout}>
             {avatarUri ? (
-              <Image source={{ uri: avatarUri }} style={styles.headerAvatar} />
+              <Image source={{ uri: avatarUri }} style={styles.profileAvatar} />
             ) : (
               <Ionicons name="log-out-outline" size={20} color={colors.primary} />
             )}
           </TouchableOpacity>
         </View>
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Chats</Text>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{unreadTotal}</Text>
-          </View>
-        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterScroll}
+          contentContainerStyle={styles.filterRow}
+        >
+          {visibleFilters.map((filter) => {
+            const isActive = activeFilter === filter.key;
+            return (
+              <TouchableOpacity
+                key={filter.key}
+                activeOpacity={0.85}
+                style={[styles.filterChip, isActive && styles.filterChipActive]}
+                onPress={() => setActiveFilter(filter.key)}
+              >
+                <Text style={[styles.filterLabel, isActive && styles.filterLabelActive]}>
+                  {filter.label}
+                  {filter.key === 'unread' && unreadTotal > 0 ? ` ${unreadTotal}` : ''}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
 
         <FlatList
-          data={chats}
+          data={filteredChats}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <ChatListItem
@@ -108,10 +206,21 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
               unreadCount={item.unreadCount}
               isOnline={item.isOnline}
               avatarColor={item.avatarColor}
+              onPress={() =>
+                navigation.navigate(SCREENS.CHAT, {
+                  name: item.name,
+                  status: item.isOnline ? 'online' : 'last seen recently',
+                  unreadBackHrefCount: unreadTotal,
+                  isGroup: item.isGroup,
+                })
+              }
             />
           )}
           contentContainerStyle={styles.chatList}
           showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            <Text style={styles.welcomeText}>Hi {user?.displayName ?? 'there'}</Text>
+          }
         />
       </View>
 
@@ -136,74 +245,118 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    paddingHorizontal: spacing.base,
+    paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
   },
-  header: {
-    backgroundColor: colors.background,
-    borderRadius: 20,
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.md,
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.base,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 3,
+    marginBottom: spacing.md,
   },
   title: {
-    fontSize: typography.fontSizeXL,
+    fontSize: 36,
     fontWeight: typography.fontWeightExtraBold,
     color: colors.textPrimary,
     letterSpacing: typography.letterSpacingTight,
   },
-  subtitle: {
-    marginTop: spacing.xs,
-    fontSize: typography.fontSizeSM,
-    color: colors.textSecondary,
-  },
-  headerIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#EEF2FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  headerAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-  },
-  sectionHeader: {
+  topActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-    paddingHorizontal: spacing.xs,
+    gap: spacing.sm,
   },
-  sectionTitle: {
-    fontSize: typography.fontSizeLG,
-    color: colors.textPrimary,
-    fontWeight: typography.fontWeightBold,
+  actionButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  badge: {
-    minWidth: 24,
-    borderRadius: 12,
-    paddingHorizontal: spacing.sm,
-    height: 24,
+  actionButtonPrimary: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badgeText: {
-    color: colors.textLight,
-    fontWeight: typography.fontWeightBold,
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  searchContainer: {
+    flex: 1,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  searchInput: {
+    marginLeft: spacing.sm,
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: typography.fontSizeSM,
+  },
+  profileButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    marginLeft: spacing.sm,
+  },
+  profileAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+  },
+  filterScroll: {
+    flexGrow: 0,
+    marginBottom: spacing.md,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  filterChip: {
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  filterLabel: {
+    color: colors.textSecondary,
+    fontWeight: typography.fontWeightMedium,
     fontSize: typography.fontSizeXS,
+  },
+  filterLabelActive: {
+    color: colors.textLight,
+    fontWeight: typography.fontWeightSemiBold,
+  },
+  welcomeText: {
+    color: colors.textSecondary,
+    fontSize: typography.fontSizeSM,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.xs,
   },
   chatList: {
     paddingBottom: spacing.base,

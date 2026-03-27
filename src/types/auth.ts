@@ -9,6 +9,7 @@ export interface User {
   /** @deprecated Use `profilePhoto` instead. Kept for backward compatibility. */
   avatarUrl?: string;
   profileCompleted?: boolean;
+  status?: string;
 }
 
 /** Image selected from the device for profile photo upload */
@@ -55,6 +56,18 @@ export interface VerifyOtpResponse {
 export interface CompleteProfileResponse {
   success: boolean;
   message: string;
+  user: User;
+}
+
+export interface UpdateUserPayload {
+  displayName?: string;
+  username?: string;
+  email?: string;
+  profilePhoto?: string;
+}
+
+export interface UpdateUserResponse {
+  success: boolean;
   user: User;
 }
 

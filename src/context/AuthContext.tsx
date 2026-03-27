@@ -80,20 +80,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ): Promise<VerifyOtpResponse> => {
       const response = await verifyOtp(phoneNumber, otpCode);
 
+      // Store user in memory so ProfileSetupScreen can read their data,
+      // but do NOT set isAuthenticated — that happens after the user
+      // reviews their profile and proceeds.
       setUser(response.user);
-
-      if (!response.requiresProfileCompletion) {
-        try {
-          await AsyncStorage.setItem(
-            STORAGE_KEYS.USER,
-            JSON.stringify(response.user),
-          );
-          await AsyncStorage.setItem(STORAGE_KEYS.IS_AUTHENTICATED, "true");
-        } catch (err) {
-          console.warn("Failed to persist auth session:", err);
-        }
-        setIsAuthenticated(true);
-      }
 
       return response;
     },
