@@ -11,8 +11,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { spacing } from '../theme/spacing';
+import { useAuth } from '../context/AuthContext';
 
 const AccountSettingsScreen = ({ navigation }) => {
+  const { user } = useAuth();
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
@@ -35,7 +37,7 @@ const AccountSettingsScreen = ({ navigation }) => {
           <View style={styles.infoRow}>
             <View style={styles.infoContent}>
               <Text style={styles.infoLabel}>Phone Number</Text>
-              <Text style={styles.infoValue}>+94 77 123 4567</Text>
+              <Text style={styles.infoValue}>{user?.phoneNumber ?? '—'}</Text>
             </View>
             <Ionicons name="call" size={20} color={colors.textMuted} />
           </View>

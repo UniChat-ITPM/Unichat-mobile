@@ -4,11 +4,23 @@ import {
   RequestOtpResponse,
   VerifyOtpPayload,
   VerifyOtpResponse,
+  CompleteProfilePayload,
+  CompleteProfileResponse,
+  User,
 } from '../types/auth';
+
+/** Ensure `profilePhoto` is populated from legacy `avatarUrl` when absent. */
+function normalizeUser(user: User): User {
+  if (!user.profilePhoto && user.avatarUrl) {
+    return { ...user, profilePhoto: user.avatarUrl };
+  }
+  return user;
+}
 
 const AUTH_ENDPOINTS = {
   REQUEST_OTP: '/auth/otp/request',
   VERIFY_OTP: '/auth/otp/verify',
+  COMPLETE_PROFILE: '/auth/register/complete',
 } as const;
 
 /**
@@ -35,7 +47,7 @@ export async function verifyOtp(
   const payload: VerifyOtpPayload = { phoneNumber, otpCode };
 
   if (__DEV__) {
-    console.log('🔐 verifyOtp payload:', JSON.stringify(payload));
+    console.log('verifyOtp payload:', JSON.stringify(payload));
   }
 
   try {
@@ -45,16 +57,53 @@ export async function verifyOtp(
     );
 
     if (__DEV__) {
-      console.log('✅ verifyOtp response:', JSON.stringify(data));
+      console.log('verifyOtp response:', JSON.stringify(data));
     }
 
-    return data;
+    return { ...data, user: normalizeUser(data.user) };
   } catch (error: any) {
     if (__DEV__) {
-      console.log('❌ verifyOtp error status:', error.response?.status);
-      console.log('❌ verifyOtp error data:', JSON.stringify(error.response?.data));
-      console.log('❌ verifyOtp error message:', error.message);
+      console.log('verifyOtp error status:', error.response?.status);
+      console.log('verifyOtp error data:', JSON.stringify(error.response?.data));
+      console.log('verifyOtp error message:', error.message);
     }
     throw error;
   }
+}
+
+/**
+ * Complete user profile registration.
+ * Sends multipart/form-data when an image is included, otherwise JSON.
+ */
+export async function completeProfile(
+  payload: CompleteProfilePayload,
+): Promise<CompleteProfileResponse> {
+  if (payload.profilePhoto) {
+    const formData = new FormData();
+    formData.append('phoneNumber', payload.phoneNumber);
+    formData.append('username', payload.username);
+    formData.append('email', payload.email);
+    formData.append('profilePhoto', {
+      uri: payload.profilePhoto.uri,
+      type: payload.profilePhoto.mimeType,
+      name: payload.profilePhoto.fileName,
+    } as any);
+
+    const { data } = await apiClient.post<CompleteProfileResponse>(
+      AUTH_ENDPOINTS.COMPLETE_PROFILE,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return data;
+  }
+
+  const { data } = await apiClient.post<CompleteProfileResponse>(
+    AUTH_ENDPOINTS.COMPLETE_PROFILE,
+    {
+      phoneNumber: payload.phoneNumber,
+      username: payload.username,
+      email: payload.email,
+    },
+  );
+  return data;
 }

@@ -51,8 +51,12 @@ const OTPScreen = ({ navigation, route }: any) => {
     setLoading(true);
     try {
       const response = await loginWithOtp(phone, otp);
-      const prefillName = response.isNewUser ? '' : response.user?.displayName ?? '';
-      navigation.replace(SCREENS.PROFILE_SETUP, { prefillName });
+
+      if (response.requiresProfileCompletion) {
+        navigation.replace(SCREENS.PROFILE_SETUP);
+      }
+      // When requiresProfileCompletion is false, AuthContext already sets
+      // isAuthenticated = true, so the navigator auto-switches to Home.
     } catch (err: any) {
       const message = err?.friendlyMessage ?? err?.message ?? 'Verification failed. Please try again.';
       setError(message);

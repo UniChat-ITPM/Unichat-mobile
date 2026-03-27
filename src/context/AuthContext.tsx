@@ -21,18 +21,25 @@ const STORAGE_KEYS = {
 interface AuthContextValue {
   user: User | null;
   isAuthenticated: boolean;
-  isLoading: boolean; // true while restoring session from storage
+  isLoading: boolean;
 
   /**
-   * Call verifyOtp, persist the session, and return the response
-   * so the caller can decide navigation (new vs returning user).
+   * Verify OTP and store the user in memory (not yet authenticated).
+   * The caller should navigate to ProfileSetup afterwards.
    */
   loginWithOtp: (
     phoneNumber: string,
     otpCode: string,
   ) => Promise<VerifyOtpResponse>;
 
-  /** Update the stored user (e.g. after profile setup). */
+  /**
+   * Finalize authentication after profile completion.
+   * Persists the user and sets isAuthenticated = true,
+   * which causes the navigator to switch to the home stack.
+   */
+  completeAuthentication: (user: User) => Promise<void>;
+
+  /** Update the stored user (e.g. after profile edits). */
   updateUser: (patch: Partial<User>) => Promise<void>;
 
   /** Clear persisted session and sign the user out. */
@@ -47,7 +54,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Restore session on mount
   useEffect(() => {
     (async () => {
       try {
@@ -74,28 +80,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ): Promise<VerifyOtpResponse> => {
       const response = await verifyOtp(phoneNumber, otpCode);
 
-      try {
-        // Persist to storage so session survives app restarts
-        await AsyncStorage.setItem(
-          STORAGE_KEYS.USER,
-          JSON.stringify(response.user),
-        );
-        await AsyncStorage.setItem(STORAGE_KEYS.IS_AUTHENTICATED, "true");
-      } catch (err) {
-        // Do not block login flow if persistence fails on device
-        console.warn("Failed to persist auth session:", err);
-      }
-
-      // Update in-memory state. The calling screen should navigate
-      // BEFORE this triggers a re-render, so we defer the state
-      // update to the next tick to avoid unmounting the current screen.
       setUser(response.user);
-      setIsAuthenticated(true);
+
+      if (!response.requiresProfileCompletion) {
+        try {
+          await AsyncStorage.setItem(
+            STORAGE_KEYS.USER,
+            JSON.stringify(response.user),
+          );
+          await AsyncStorage.setItem(STORAGE_KEYS.IS_AUTHENTICATED, "true");
+        } catch (err) {
+          console.warn("Failed to persist auth session:", err);
+        }
+        setIsAuthenticated(true);
+      }
 
       return response;
     },
     [],
   );
+
+  const completeAuthentication = useCallback(async (completedUser: User) => {
+    try {
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.USER,
+        JSON.stringify(completedUser),
+      );
+      await AsyncStorage.setItem(STORAGE_KEYS.IS_AUTHENTICATED, "true");
+    } catch (err) {
+      console.warn("Failed to persist auth session:", err);
+    }
+
+    setUser(completedUser);
+    setIsAuthenticated(true);
+  }, []);
 
   const updateUser = useCallback(async (patch: Partial<User>) => {
     setUser((prev) => {
@@ -128,10 +146,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated,
       isLoading,
       loginWithOtp,
+      completeAuthentication,
       updateUser,
       logout,
     }),
-    [user, isAuthenticated, isLoading, loginWithOtp, updateUser, logout],
+    [user, isAuthenticated, isLoading, loginWithOtp, completeAuthentication, updateUser, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

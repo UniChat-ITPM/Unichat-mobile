@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   SafeAreaView,
   TouchableOpacity,
@@ -11,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import ChatListItem from '../components/ChatListItem';
 import BottomTabBar, { HomeTabKey } from '../components/BottomTabBar';
 import { useAuth } from '../context/AuthContext';
+import { getProfileImageUrl } from '../utils/avatar';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { spacing } from '../theme/spacing';
@@ -65,6 +67,7 @@ const DEMO_CHATS: ChatPreview[] = [
 
 const HomeScreen = ({ navigation }: { navigation: any }) => {
   const { user, logout } = useAuth();
+  const avatarUri = getProfileImageUrl(user);
   const [activeTab, setActiveTab] = useState<HomeTabKey>('chats');
 
   const chats = useMemo(() => DEMO_CHATS, []);
@@ -79,7 +82,11 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
             <Text style={styles.subtitle}>Hi {user?.displayName ?? 'there'}, welcome back</Text>
           </View>
           <TouchableOpacity style={styles.headerIcon} activeOpacity={0.85} onPress={logout}>
-            <Ionicons name="log-out-outline" size={20} color={colors.primary} />
+            {avatarUri ? (
+              <Image source={{ uri: avatarUri }} style={styles.headerAvatar} />
+            ) : (
+              <Ionicons name="log-out-outline" size={20} color={colors.primary} />
+            )}
           </TouchableOpacity>
         </View>
 
@@ -165,6 +172,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#EEF2FF',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  headerAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
   },
   sectionHeader: {
     flexDirection: 'row',

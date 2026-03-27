@@ -4,6 +4,19 @@ export interface User {
   phoneNumber: string;
   displayName: string;
   username: string | null;
+  email?: string;
+  profilePhoto?: string;
+  /** @deprecated Use `profilePhoto` instead. Kept for backward compatibility. */
+  avatarUrl?: string;
+  profileCompleted?: boolean;
+}
+
+/** Image selected from the device for profile photo upload */
+export interface ProfileImage {
+  uri: string;
+  mimeType: string;
+  fileName: string;
+  fileSize: number;
 }
 
 /* ─── Request payloads ────────────────────────────────────── */
@@ -17,6 +30,13 @@ export interface VerifyOtpPayload {
   otpCode: string;
 }
 
+export interface CompleteProfilePayload {
+  phoneNumber: string;
+  username: string;
+  email: string;
+  profilePhoto?: ProfileImage;
+}
+
 /* ─── Response shapes ─────────────────────────────────────── */
 
 export interface RequestOtpResponse {
@@ -28,6 +48,13 @@ export interface VerifyOtpResponse {
   success: boolean;
   message: string;
   isNewUser: boolean;
+  requiresProfileCompletion: boolean;
+  user: User;
+}
+
+export interface CompleteProfileResponse {
+  success: boolean;
+  message: string;
   user: User;
 }
 
