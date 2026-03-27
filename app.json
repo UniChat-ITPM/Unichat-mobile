@@ -12,9 +12,21 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Allow UniChat to record voice messages.",
+        "NSPhotoLibraryUsageDescription": "Allow UniChat to attach photos from your library.",
+        "NSCameraUsageDescription": "Allow UniChat to take photos for chat.",
+        "NSContactsUsageDescription": "Allow UniChat to share a contact in chat."
+      }
     },
     "android": {
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_CONTACTS",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.CAMERA"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

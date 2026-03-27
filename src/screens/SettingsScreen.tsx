@@ -4,10 +4,10 @@ import {
   Text,
   Image,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
@@ -57,7 +57,7 @@ const SettingsScreen = ({ navigation }) => {
         <TouchableOpacity 
           style={styles.profileCard} 
           activeOpacity={0.8}
-          onPress={() => navigation.navigate(SCREENS.PROFILE_SETUP)}
+          onPress={() => navigation.navigate(SCREENS.EDIT_PROFILE)}
         >
           {avatarUri ? (
             <Image source={{ uri: avatarUri }} style={styles.profileAvatarImage} />

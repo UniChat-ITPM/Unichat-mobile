@@ -111,19 +111,21 @@ describe('OTP verify response normalization', () => {
   });
 
   describe('routing decision', () => {
-    it('routes to profile setup when requiresProfileCompletion is true', () => {
-      const response: VerifyOtpResponse = {
+    it('always routes to profile setup after OTP verify', () => {
+      const newUser: VerifyOtpResponse = {
         success: true,
         message: 'OK',
         isNewUser: true,
         requiresProfileCompletion: true,
         user: { id: 'u-4', phoneNumber: phone, displayName: '', username: null },
       };
-      expect(response.requiresProfileCompletion).toBe(true);
+      // New users fill in profile before proceeding
+      expect(newUser.requiresProfileCompletion).toBe(true);
+      expect(newUser.user.profileCompleted).toBeUndefined();
     });
 
-    it('routes to home when requiresProfileCompletion is false', () => {
-      const response: VerifyOtpResponse = {
+    it('existing user sees profile review then continues to home', () => {
+      const existingUser: VerifyOtpResponse = {
         success: true,
         message: 'OK',
         isNewUser: false,
@@ -137,7 +139,10 @@ describe('OTP verify response normalization', () => {
           profileCompleted: true,
         },
       };
-      expect(response.requiresProfileCompletion).toBe(false);
+      // Existing user still goes to profile screen but can skip straight to home
+      expect(existingUser.user.profileCompleted).toBe(true);
+      expect(existingUser.user.displayName).toBe('Returning');
+      expect(existingUser.user.profilePhoto).toBe('https://cdn.example.com/photo.jpg');
     });
   });
 });

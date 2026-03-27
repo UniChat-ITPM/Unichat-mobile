@@ -20,55 +20,69 @@ import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { spacing } from '../theme/spacing';
 import { useAuth } from '../context/AuthContext';
-import { completeProfile, updateUserById } from '../services/auth';
+import { updateUserById } from '../services/auth';
 import { getProfileImageUrl } from '../utils/avatar';
 import { toBase64DataUri } from '../utils/image';
 import {
   isValidUsername,
   isValidEmail,
-  isValidE164,
   validateProfileImage,
 } from '../utils/validators';
 import { ProfileImage, UpdateUserPayload } from '../types/auth';
 
-const ProfileSetupScreen = ({ navigation }: any) => {
-  const { user, completeAuthentication } = useAuth();
-  const existingPhoto = getProfileImageUrl(user);
-  const isExistingUser = user?.profileCompleted === true;
+const EditProfileScreen = ({ navigation }: any) => {
+  const { user, updateUser } = useAuth();
+  const currentPhoto = getProfileImageUrl(user);
 
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
+  const [username, setUsername] = useState(user?.username ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
   const [selectedImage, setSelectedImage] = useState<ProfileImage | null>(null);
   const [loading, setLoading] = useState(false);
 
   const [nameError, setNameError] = useState('');
+  const [usernameError, setUsernameError] = useState('');
   const [emailError, setEmailError] = useState('');
   const [imageError, setImageError] = useState('');
 
-  const phoneNumber = user?.phoneNumber ?? '';
+  const hasChanges = useMemo(() => {
+    if (selectedImage) return true;
+    if (displayName.trim() !== (user?.displayName ?? '')) return true;
+    if (username.trim() !== (user?.username ?? '')) return true;
+    if (email.trim() !== (user?.email ?? '')) return true;
+    return false;
+  }, [displayName, username, email, selectedImage, user]);
+
+  const isFormValid =
+    displayName.trim().length >= 3 &&
+    email.trim().length > 0 &&
+    !nameError &&
+    !usernameError &&
+    !emailError;
 
   const validateForm = (): boolean => {
     let valid = true;
 
-    const trimmedName = displayName.trim();
-    if (!isValidUsername(trimmedName)) {
+    if (!isValidUsername(displayName.trim())) {
       setNameError('3–50 characters: letters, numbers, and underscore only');
       valid = false;
     } else {
       setNameError('');
     }
 
-    const trimmedEmail = email.trim();
-    if (!isValidEmail(trimmedEmail)) {
+    const trimmedUsername = username.trim();
+    if (trimmedUsername.length > 0 && !isValidUsername(trimmedUsername)) {
+      setUsernameError('3–50 characters: letters, numbers, and underscore only');
+      valid = false;
+    } else {
+      setUsernameError('');
+    }
+
+    if (!isValidEmail(email.trim())) {
       setEmailError('Please enter a valid email address');
       valid = false;
     } else {
       setEmailError('');
-    }
-
-    if (!isValidE164(phoneNumber)) {
-      Alert.alert('Error', 'Invalid phone number. Please go back and verify again.');
-      valid = false;
     }
 
     return valid;
@@ -119,48 +133,35 @@ const ProfileSetupScreen = ({ navigation }: any) => {
     setImageError('');
   };
 
-  const hasChanges = useMemo(() => {
-    if (selectedImage) return true;
-    if (displayName.trim() !== (user?.displayName ?? '')) return true;
-    if (email.trim() !== (user?.email ?? '')) return true;
-    return false;
-  }, [displayName, email, selectedImage, user]);
-
-  const handleSubmit = async () => {
-    if (isExistingUser && !hasChanges) {
-      await completeAuthentication(user!);
-      return;
-    }
-
+  const handleSave = async () => {
+    if (!hasChanges || !user) return;
     if (!validateForm()) return;
 
     setLoading(true);
     try {
-      if (isExistingUser) {
-        const payload: UpdateUserPayload = {};
-        if (displayName.trim() !== (user!.displayName ?? '')) {
-          payload.displayName = displayName.trim();
-        }
-        if (email.trim() !== (user!.email ?? '')) {
-          payload.email = email.trim();
-        }
-        if (selectedImage) {
-          payload.profilePhoto = await toBase64DataUri(
-            selectedImage.uri,
-            selectedImage.mimeType,
-          );
-        }
-        const response = await updateUserById(user!.id, payload);
-        await completeAuthentication(response.user);
-      } else {
-        const response = await completeProfile({
-          phoneNumber,
-          username: displayName.trim(),
-          email: email.trim(),
-          profilePhoto: selectedImage ?? undefined,
-        });
-        await completeAuthentication(response.user);
+      const payload: UpdateUserPayload = {};
+
+      if (displayName.trim() !== (user.displayName ?? '')) {
+        payload.displayName = displayName.trim();
       }
+      if (username.trim() !== (user.username ?? '')) {
+        payload.username = username.trim();
+      }
+      if (email.trim() !== (user.email ?? '')) {
+        payload.email = email.trim();
+      }
+      if (selectedImage) {
+        payload.profilePhoto = await toBase64DataUri(
+          selectedImage.uri,
+          selectedImage.mimeType,
+        );
+      }
+
+      const response = await updateUserById(user.id, payload);
+      await updateUser(response.user);
+      Alert.alert('Success', 'Your profile has been updated.', [
+        { text: 'OK', onPress: () => navigation.goBack() },
+      ]);
     } catch (err: any) {
       const status = err?.response?.status;
 
@@ -172,7 +173,8 @@ const ProfileSetupScreen = ({ navigation }: any) => {
           'Username or email is already in use. Please choose a different one.',
         );
       } else if (status === 400) {
-        const msg = err?.friendlyMessage ?? 'Please check your inputs and try again.';
+        const msg =
+          err?.friendlyMessage ?? 'Please check your inputs and try again.';
         Alert.alert('Validation Error', msg);
       } else if (status === 500) {
         Alert.alert(
@@ -180,7 +182,8 @@ const ProfileSetupScreen = ({ navigation }: any) => {
           'Something went wrong on our end. Please try again later.',
         );
       } else {
-        const msg = err?.friendlyMessage ?? 'Something went wrong. Please try again.';
+        const msg =
+          err?.friendlyMessage ?? 'Something went wrong. Please try again.';
         Alert.alert('Error', msg);
       }
     } finally {
@@ -188,11 +191,7 @@ const ProfileSetupScreen = ({ navigation }: any) => {
     }
   };
 
-  const isFormValid =
-    displayName.trim().length >= 3 &&
-    email.trim().length > 0 &&
-    !nameError &&
-    !emailError;
+  const displayedPhoto = selectedImage?.uri ?? currentPhoto;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -205,24 +204,18 @@ const ProfileSetupScreen = ({ navigation }: any) => {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Back button */}
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => navigation.goBack()}
-            disabled={loading}
-          >
-            <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
-          </TouchableOpacity>
-
           {/* Header */}
-          <Text style={styles.title}>
-            {isExistingUser ? 'Welcome Back!' : 'Set Up Your Profile'}
-          </Text>
-          <Text style={styles.subtitle}>
-            {isExistingUser
-              ? 'Update your details or continue to your chats'
-              : 'Add your name, email and photo so others can recognize you'}
-          </Text>
+          <View style={styles.header}>
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={() => navigation.goBack()}
+              disabled={loading}
+            >
+              <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Edit Profile</Text>
+            <View style={{ width: 44 }} />
+          </View>
 
           {/* Profile photo */}
           <View style={styles.photoSection}>
@@ -232,10 +225,8 @@ const ProfileSetupScreen = ({ navigation }: any) => {
               onPress={handlePickImage}
               disabled={loading}
             >
-              {selectedImage ? (
-                <Image source={{ uri: selectedImage.uri }} style={styles.photoImage} />
-              ) : existingPhoto ? (
-                <Image source={{ uri: existingPhoto }} style={styles.photoImage} />
+              {displayedPhoto ? (
+                <Image source={{ uri: displayedPhoto }} style={styles.photoImage} />
               ) : (
                 <LinearGradient
                   colors={['#C7D2FE', '#DDD6FE']}
@@ -270,7 +261,7 @@ const ProfileSetupScreen = ({ navigation }: any) => {
                 disabled={loading}
               >
                 <Text style={styles.photoActionText}>
-                  {existingPhoto ? 'Change Profile Photo' : 'Add Profile Photo'}
+                  {displayedPhoto ? 'Change Photo' : 'Add Photo'}
                 </Text>
               </TouchableOpacity>
             )}
@@ -283,7 +274,7 @@ const ProfileSetupScreen = ({ navigation }: any) => {
             ) : null}
           </View>
 
-          {/* Form card */}
+          {/* Form */}
           <View style={styles.card}>
             <TextInputField
               label="Display Name"
@@ -299,6 +290,23 @@ const ProfileSetupScreen = ({ navigation }: any) => {
               errorText={nameError}
               leftElement={
                 <Ionicons name="person-outline" size={20} color={colors.textMuted} />
+              }
+            />
+
+            <TextInputField
+              label="Username"
+              placeholder="Enter a unique username"
+              value={username}
+              onChangeText={(text: string) => {
+                setUsername(text);
+                if (usernameError) setUsernameError('');
+              }}
+              autoCapitalize="none"
+              maxLength={50}
+              editable={!loading}
+              errorText={usernameError}
+              leftElement={
+                <Ionicons name="at-outline" size={20} color={colors.textMuted} />
               }
             />
 
@@ -321,49 +329,12 @@ const ProfileSetupScreen = ({ navigation }: any) => {
             />
 
             <PrimaryButton
-              title={isExistingUser ? (hasChanges ? 'Save & Continue' : 'Continue') : 'Complete Profile'}
-              onPress={handleSubmit}
-              disabled={!isFormValid || loading}
+              title="Save Changes"
+              onPress={handleSave}
+              disabled={!hasChanges || !isFormValid || loading}
               loading={loading}
               style={styles.ctaButton}
             />
-
-            <View style={styles.helperRow}>
-              <Ionicons
-                name="information-circle-outline"
-                size={14}
-                color={colors.textMuted}
-              />
-              <Text style={styles.helperText}>
-                Profile photo is optional (max 5 MB)
-              </Text>
-            </View>
-          </View>
-
-          {/* Progress indicator */}
-          <View style={styles.progressHint}>
-            <View style={styles.progressStep}>
-              <View style={[styles.progressDot, styles.progressDotDone]}>
-                <Ionicons name="checkmark" size={12} color="#fff" />
-              </View>
-              <Text style={styles.progressLabel}>Verify</Text>
-            </View>
-            <View style={styles.progressLine} />
-            <View style={styles.progressStep}>
-              <View style={[styles.progressDot, styles.progressDotActive]}>
-                <Ionicons name="person" size={12} color="#fff" />
-              </View>
-              <Text style={[styles.progressLabel, { color: colors.primary }]}>
-                Profile
-              </Text>
-            </View>
-            <View style={styles.progressLine} />
-            <View style={styles.progressStep}>
-              <View style={styles.progressDot}>
-                <Ionicons name="chatbubbles" size={12} color={colors.textMuted} />
-              </View>
-              <Text style={styles.progressLabel}>Chat</Text>
-            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -380,35 +351,30 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xl,
     alignItems: 'center',
   },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: spacing.xxl,
+  },
+  headerTitle: {
+    fontSize: typography.fontSizeXL,
+    fontWeight: typography.fontWeightBold,
+    color: colors.textPrimary,
+  },
   backBtn: {
-    alignSelf: 'flex-start',
     width: 44,
     height: 44,
     borderRadius: 14,
     backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.xxl,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 2,
-  },
-  title: {
-    fontSize: typography.fontSize2XL,
-    fontWeight: typography.fontWeightExtraBold,
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: spacing.sm,
-  },
-  subtitle: {
-    fontSize: typography.fontSizeMD,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: spacing.xxl,
-    paddingHorizontal: spacing.base,
   },
 
   /* ── Photo ───────────────────────────────────────── */
@@ -417,9 +383,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xxl,
     gap: spacing.md,
   },
-  photoWrapper: {
-    position: 'relative',
-  },
+  photoWrapper: { position: 'relative' },
   photoPlaceholder: {
     width: 110,
     height: 110,
@@ -485,55 +449,7 @@ const styles = StyleSheet.create({
   ctaButton: {
     width: '100%',
     marginTop: spacing.sm,
-    marginBottom: spacing.base,
-  },
-  helperRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-  },
-  helperText: {
-    fontSize: typography.fontSizeXS,
-    color: colors.textMuted,
-  },
-
-  /* ── Progress ─────────────────────────────────────── */
-  progressHint: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  progressStep: {
-    alignItems: 'center',
-    gap: 4,
-  },
-  progressDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.dotInactive,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  progressDotDone: {
-    backgroundColor: colors.success,
-  },
-  progressDotActive: {
-    backgroundColor: colors.primary,
-  },
-  progressLine: {
-    flex: 1,
-    height: 2,
-    backgroundColor: colors.border,
-    minWidth: 40,
-    marginBottom: 16,
-  },
-  progressLabel: {
-    fontSize: typography.fontSizeXS,
-    fontWeight: typography.fontWeightMedium,
-    color: colors.textMuted,
   },
 });
 
-export default ProfileSetupScreen;
+export default EditProfileScreen;
