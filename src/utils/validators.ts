@@ -21,3 +21,37 @@ export function toE164(localNumber: string, countryCode: string): string {
   const digitsOnly = localNumber.replace(/\D/g, '');
   return `${countryCode}${digitsOnly}`;
 }
+
+/**
+ * Validate a username: 3-50 characters, letters, numbers and underscores only.
+ */
+export function isValidUsername(username: string): boolean {
+  return /^[a-zA-Z0-9_]{3,50}$/.test(username);
+}
+
+/**
+ * Validate an email address format.
+ */
+export function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Validate a profile image by MIME type and file size.
+ * Returns an error string if invalid, or null if valid.
+ */
+export function validateProfileImage(
+  mimeType: string,
+  fileSize: number,
+): string | null {
+  if (!ALLOWED_IMAGE_TYPES.includes(mimeType)) {
+    return 'Please select a JPEG, PNG, WebP, or GIF image.';
+  }
+  if (fileSize > MAX_IMAGE_SIZE_BYTES) {
+    return 'Image must be 5 MB or smaller.';
+  }
+  return null;
+}

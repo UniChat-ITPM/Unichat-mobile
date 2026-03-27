@@ -2,6 +2,7 @@ import React from 'react';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   SafeAreaView,
   ScrollView,
@@ -13,6 +14,8 @@ import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { spacing } from '../theme/spacing';
 import { SCREENS } from '../constants';
+import { useAuth } from '../context/AuthContext';
+import { getProfileImageUrl } from '../utils/avatar';
 
 const SettingsRow = ({ icon, title, subtitle, onPress, iconColor = colors.primary, showRightArrow = true }) => (
   <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
@@ -30,6 +33,9 @@ const SettingsRow = ({ icon, title, subtitle, onPress, iconColor = colors.primar
 );
 
 const SettingsScreen = ({ navigation }) => {
+  const { user } = useAuth();
+  const avatarUri = getProfileImageUrl(user);
+
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
@@ -53,15 +59,19 @@ const SettingsScreen = ({ navigation }) => {
           activeOpacity={0.8}
           onPress={() => navigation.navigate(SCREENS.PROFILE_SETUP)}
         >
-          <LinearGradient
-            colors={['#C7D2FE', '#DDD6FE']}
-            style={styles.profileAvatar}
-          >
-            <Ionicons name="person" size={40} color={colors.primary} />
-          </LinearGradient>
+          {avatarUri ? (
+            <Image source={{ uri: avatarUri }} style={styles.profileAvatarImage} />
+          ) : (
+            <LinearGradient
+              colors={['#C7D2FE', '#DDD6FE']}
+              style={styles.profileAvatar}
+            >
+              <Ionicons name="person" size={40} color={colors.primary} />
+            </LinearGradient>
+          )}
           <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>John Doe</Text>
-            <Text style={styles.profilePhone}>+94 77 123 4567</Text>
+            <Text style={styles.profileName}>{user?.displayName ?? 'User'}</Text>
+            <Text style={styles.profilePhone}>{user?.phoneNumber ?? ''}</Text>
           </View>
           <View style={styles.editBtn}>
             <Ionicons name="pencil" size={16} color={colors.primary} />
@@ -172,6 +182,12 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  profileAvatarImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     marginRight: spacing.md,
   },
   profileInfo: {
