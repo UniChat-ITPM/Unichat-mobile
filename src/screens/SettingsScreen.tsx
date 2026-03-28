@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { spacing } from '../theme/spacing';
+import { scrollPaddingAboveMainTabBar } from '../theme/layout';
 import { SCREENS } from '../constants';
 import { useAuth } from '../context/AuthContext';
 import { getProfileImageUrl } from '../utils/avatar';
@@ -37,20 +38,24 @@ const SettingsScreen = ({ navigation }) => {
   const avatarUri = getProfileImageUrl(user);
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
-        </TouchableOpacity>
+        {navigation.canGoBack() ? (
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.headerSide} />
+        )}
         <Text style={styles.headerTitle}>Settings</Text>
-        <View style={{ width: 44 }} />
+        <View style={styles.headerSide} />
       </View>
 
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[
+          styles.scroll,
+          { paddingBottom: scrollPaddingAboveMainTabBar },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {/* Profile Section */}
@@ -122,8 +127,6 @@ const SettingsScreen = ({ navigation }) => {
             onPress={() => navigation.navigate(SCREENS.HELP_SUPPORT)}
           />
         </View>
-
-        <View style={{ height: spacing.xxxl }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -144,6 +147,10 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeightBold,
     color: colors.textPrimary,
   },
+  headerSide: {
+    width: 44,
+    height: 44,
+  },
   backBtn: {
     width: 44,
     height: 44,
@@ -158,10 +165,8 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   scroll: {
-    flexGrow: 1,
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.base,
-    paddingBottom: spacing.xxxl,
   },
   profileCard: {
     flexDirection: 'row',

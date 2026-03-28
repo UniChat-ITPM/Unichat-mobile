@@ -17,10 +17,11 @@
         "NSMicrophoneUsageDescription": "Allow UniChat to record voice messages.",
         "NSPhotoLibraryUsageDescription": "Allow UniChat to attach photos from your library.",
         "NSCameraUsageDescription": "Allow UniChat to take photos for chat.",
-        "NSContactsUsageDescription": "Allow UniChat to share a contact in chat."
+        "NSContactsUsageDescription": "UniChat uses contacts to find people you know on the app and to share contact cards in chat."
       }
     },
     "android": {
+      "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.READ_CONTACTS",

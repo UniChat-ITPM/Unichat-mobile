@@ -29,6 +29,21 @@ export function isValidUsername(username: string): boolean {
   return /^[a-zA-Z0-9_]{3,50}$/.test(username);
 }
 
+/** Trim and collapse internal whitespace for display names. */
+export function normalizeDisplayName(s: string): string {
+  return s.trim().replace(/\s+/g, ' ');
+}
+
+/**
+ * Validate a profile display name: 3–50 characters after trim;
+ * letters, numbers, underscores, and single spaces between words (e.g. "Dumindu Dissanayake").
+ */
+export function isValidDisplayName(name: string): boolean {
+  const normalized = normalizeDisplayName(name);
+  if (normalized.length < 3 || normalized.length > 50) return false;
+  return /^[a-zA-Z0-9_]+(?: [a-zA-Z0-9_]+)*$/.test(normalized);
+}
+
 /**
  * Validate an email address format.
  */

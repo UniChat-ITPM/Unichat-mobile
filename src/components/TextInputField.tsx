@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, Animated } from 'react-native';
+import { View, Text, TextInput, StyleSheet, Platform } from 'react-native';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { spacing } from '../theme/spacing';
@@ -16,14 +16,32 @@ const TextInputField = ({
   errorText,
   style,
   inputStyle,
+  inputWrapperStyle,
+  /** When set, keeps vertical space under the field stable when error shows/hides (helps Android keyboard). */
+  errorSlotMinHeight,
   leftElement,
   rightElement,
   editable = true,
+  onFocus,
+  onBlur,
 }) => {
   const [isFocused, setIsFocused] = useState(false);
 
+  const handleFocus = (e: any) => {
+    setIsFocused(true);
+    if (onFocus) onFocus(e);
+  };
+
+  const handleBlur = (e: any) => {
+    setIsFocused(false);
+    if (onBlur) onBlur(e);
+  };
+
   return (
-    <View style={[styles.container, style]}>
+    <View
+      style={[styles.container, style]}
+      collapsable={Platform.OS === 'android' ? false : undefined}
+    >
       {label ? <Text style={styles.label}>{label}</Text> : null}
 
       <View
@@ -32,7 +50,9 @@ const TextInputField = ({
           isFocused && styles.inputWrapperFocused,
           errorText && styles.inputWrapperError,
           !editable && styles.inputWrapperDisabled,
+          inputWrapperStyle,
         ]}
+        collapsable={Platform.OS === 'android' ? false : undefined}
       >
         {leftElement && (
           <View style={styles.leftElement}>{leftElement}</View>
@@ -49,8 +69,10 @@ const TextInputField = ({
           autoCapitalize={autoCapitalize}
           maxLength={maxLength}
           editable={editable}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
+          underlineColorAndroid="transparent"
+          blurOnSubmit={false}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
         />
 
         {rightElement && (
@@ -58,7 +80,13 @@ const TextInputField = ({
         )}
       </View>
 
-      {errorText ? (
+      {errorSlotMinHeight != null ? (
+        <View style={[styles.errorSlot, { minHeight: errorSlotMinHeight }]}>
+          {errorText ? (
+            <Text style={styles.errorText}>{errorText}</Text>
+          ) : null}
+        </View>
+      ) : errorText ? (
         <Text style={styles.errorText}>{errorText}</Text>
       ) : null}
     </View>
@@ -115,6 +143,9 @@ const styles = StyleSheet.create({
   },
   rightElement: {
     marginLeft: spacing.sm,
+  },
+  errorSlot: {
+    justifyContent: 'flex-start',
   },
   errorText: {
     color: colors.error,

@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { spacing } from '../theme/spacing';
+import { scrollPaddingAboveMainTabBar } from '../theme/layout';
 
 const ActionRow = ({ icon, title, subtitle, onPress, iconColor = colors.primary }) => (
   <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
@@ -27,7 +28,7 @@ const ActionRow = ({ icon, title, subtitle, onPress, iconColor = colors.primary 
 
 const HelpSupportScreen = ({ navigation }) => {
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
@@ -81,7 +82,6 @@ const HelpSupportScreen = ({ navigation }) => {
           <Text style={styles.versionText}>UniChat v1.2.0</Text>
         </View>
 
-        <View style={{ height: spacing.xxxl }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -116,10 +116,8 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   scroll: {
-    flexGrow: 1,
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.base,
-    paddingBottom: spacing.xxxl,
   },
   sectionTitle: {
     fontSize: typography.fontSizeSM,

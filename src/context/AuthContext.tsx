@@ -8,13 +8,17 @@ import React, {
   ReactNode,
 } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { setAccessTokenMemory } from "../auth/accessTokenStore";
+import { setUserIdMemory } from "../auth/userIdStore";
 import { User, VerifyOtpResponse } from "../types/auth";
 import { verifyOtp } from "../services/auth";
+import { disconnectChatSocket, reconnectChatSocketWithToken } from "../services/chatSocket";
 
 /* ─── Storage keys ────────────────────────────────────────── */
 const STORAGE_KEYS = {
   USER: "@unichat/user",
   IS_AUTHENTICATED: "@unichat/is_authenticated",
+  ACCESS_TOKEN: "@unichat/access_token",
 } as const;
 
 /* ─── Context shape ───────────────────────────────────────── */
@@ -37,13 +41,21 @@ interface AuthContextValue {
    * Persists the user and sets isAuthenticated = true,
    * which causes the navigator to switch to the home stack.
    */
-  completeAuthentication: (user: User) => Promise<void>;
+  completeAuthentication: (user: User, accessToken?: string | null) => Promise<void>;
 
   /** Update the stored user (e.g. after profile edits). */
   updateUser: (patch: Partial<User>) => Promise<void>;
 
   /** Clear persisted session and sign the user out. */
   logout: () => Promise<void>;
+
+  /** JWT for API and Socket.IO; null before OTP verify or after logout. */
+  accessToken: string | null;
+
+  /**
+   * Persist a refreshed JWT, update REST headers, and reconnect Socket.IO with `auth.token`.
+   */
+  updateAccessToken: (token: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -52,6 +64,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -64,6 +77,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (storedAuth === "true" && storedUser) {
           setUser(JSON.parse(storedUser) as User);
           setIsAuthenticated(true);
+          const storedToken = await AsyncStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+          if (storedToken) {
+            setAccessToken(storedToken);
+            setAccessTokenMemory(storedToken);
+          }
         }
       } catch (err) {
         console.warn("Failed to restore auth session:", err);
@@ -72,6 +90,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    setUserIdMemory(user?.id ?? null);
+  }, [user?.id]);
 
   const loginWithOtp = useCallback(
     async (
@@ -84,26 +106,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // but do NOT set isAuthenticated — that happens after the user
       // reviews their profile and proceeds.
       setUser(response.user);
+      if (response.accessToken) {
+        setAccessToken(response.accessToken);
+        setAccessTokenMemory(response.accessToken);
+      }
 
       return response;
     },
     [],
   );
 
-  const completeAuthentication = useCallback(async (completedUser: User) => {
-    try {
-      await AsyncStorage.setItem(
-        STORAGE_KEYS.USER,
-        JSON.stringify(completedUser),
-      );
-      await AsyncStorage.setItem(STORAGE_KEYS.IS_AUTHENTICATED, "true");
-    } catch (err) {
-      console.warn("Failed to persist auth session:", err);
-    }
+  const completeAuthentication = useCallback(
+    async (completedUser: User, nextAccessToken?: string | null) => {
+      const tokenToStore =
+        nextAccessToken !== undefined && nextAccessToken !== null
+          ? nextAccessToken
+          : accessToken;
 
-    setUser(completedUser);
-    setIsAuthenticated(true);
-  }, []);
+      try {
+        await AsyncStorage.setItem(
+          STORAGE_KEYS.USER,
+          JSON.stringify(completedUser),
+        );
+        await AsyncStorage.setItem(STORAGE_KEYS.IS_AUTHENTICATED, "true");
+        if (tokenToStore) {
+          await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, tokenToStore);
+        }
+      } catch (err) {
+        console.warn("Failed to persist auth session:", err);
+      }
+
+      setUser(completedUser);
+      if (tokenToStore) {
+        setAccessToken(tokenToStore);
+        setAccessTokenMemory(tokenToStore);
+      }
+      setIsAuthenticated(true);
+    },
+    [accessToken],
+  );
 
   const updateUser = useCallback(async (patch: Partial<User>) => {
     setUser((prev) => {
@@ -117,17 +158,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    disconnectChatSocket();
     try {
       await AsyncStorage.multiRemove([
         STORAGE_KEYS.USER,
         STORAGE_KEYS.IS_AUTHENTICATED,
+        STORAGE_KEYS.ACCESS_TOKEN,
       ]);
     } catch (err) {
       console.warn("Failed to clear auth session:", err);
     } finally {
+      setAccessToken(null);
+      setAccessTokenMemory(null);
+      setUserIdMemory(null);
       setUser(null);
       setIsAuthenticated(false);
     }
+  }, []);
+
+  const updateAccessToken = useCallback(async (token: string) => {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, token);
+    } catch (err) {
+      console.warn("Failed to persist access token:", err);
+    }
+    setAccessToken(token);
+    setAccessTokenMemory(token);
+    reconnectChatSocketWithToken(token);
   }, []);
 
   const value = useMemo<AuthContextValue>(
@@ -139,8 +196,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       completeAuthentication,
       updateUser,
       logout,
+      accessToken,
+      updateAccessToken,
     }),
-    [user, isAuthenticated, isLoading, loginWithOtp, completeAuthentication, updateUser, logout],
+    [
+      user,
+      isAuthenticated,
+      isLoading,
+      loginWithOtp,
+      completeAuthentication,
+      updateUser,
+      logout,
+      accessToken,
+      updateAccessToken,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

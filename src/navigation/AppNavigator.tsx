@@ -8,14 +8,7 @@ import Onboarding3Screen from "../screens/Onboarding3Screen";
 import LoginScreen from "../screens/LoginScreen";
 import OTPScreen from "../screens/OTPScreen";
 import ProfileSetupScreen from "../screens/ProfileSetupScreen";
-import HomeScreen from "../screens/HomeScreen";
-import SettingsScreen from '../screens/SettingsScreen';
-import AccountSettingsScreen from '../screens/AccountSettingsScreen';
-import PrivacySafetyScreen from '../screens/PrivacySafetyScreen';
-import NotificationsSettingsScreen from '../screens/NotificationsSettingsScreen';
-import StorageDataScreen from '../screens/StorageDataScreen';
-import HelpSupportScreen from '../screens/HelpSupportScreen';
-import EditProfileScreen from '../screens/EditProfileScreen';
+import MainTabNavigator from './MainTabNavigator';
 import ChatScreen from '../screens/ChatScreen';
 import ParticipantProfileScreen from '../screens/ParticipantProfileScreen';
 import { SCREENS } from "../constants";
@@ -56,16 +49,9 @@ const AppNavigator = () => {
     >
       {isAuthenticated ? (
         <>
-          <Stack.Screen name={SCREENS.HOME} component={HomeScreen} />
+          <Stack.Screen name={SCREENS.MAIN} component={MainTabNavigator} />
           <Stack.Screen name={SCREENS.CHAT} component={ChatScreen} />
           <Stack.Screen name={SCREENS.PARTICIPANT_PROFILE} component={ParticipantProfileScreen} />
-          <Stack.Screen name={SCREENS.SETTINGS} component={SettingsScreen} />
-          <Stack.Screen name={SCREENS.ACCOUNT_SETTINGS} component={AccountSettingsScreen} />
-          <Stack.Screen name={SCREENS.PRIVACY_SAFETY} component={PrivacySafetyScreen} />
-          <Stack.Screen name={SCREENS.NOTIFICATIONS_SETTINGS} component={NotificationsSettingsScreen} />
-          <Stack.Screen name={SCREENS.STORAGE_DATA} component={StorageDataScreen} />
-          <Stack.Screen name={SCREENS.HELP_SUPPORT} component={HelpSupportScreen} />
-          <Stack.Screen name={SCREENS.EDIT_PROFILE} component={EditProfileScreen} />
         </>
       ) : (
         <>

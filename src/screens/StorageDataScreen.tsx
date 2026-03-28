@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { spacing } from '../theme/spacing';
+import { scrollPaddingAboveMainTabBar } from '../theme/layout';
 
 const ActionRow = ({ icon, title, subtitle, onPress, iconColor = colors.primary, showRightArrow = true }) => (
   <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
@@ -29,7 +30,7 @@ const ActionRow = ({ icon, title, subtitle, onPress, iconColor = colors.primary,
 
 const StorageDataScreen = ({ navigation }) => {
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
@@ -42,7 +43,10 @@ const StorageDataScreen = ({ navigation }) => {
       </View>
 
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[
+          styles.scroll,
+          { paddingBottom: scrollPaddingAboveMainTabBar },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         <Text style={styles.sectionTitle}>Storage</Text>
@@ -73,7 +77,6 @@ const StorageDataScreen = ({ navigation }) => {
           />
         </View>
 
-        <View style={{ height: spacing.xxxl }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -108,10 +111,8 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   scroll: {
-    flexGrow: 1,
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.base,
-    paddingBottom: spacing.xxxl,
   },
   sectionTitle: {
     fontSize: typography.fontSizeSM,
