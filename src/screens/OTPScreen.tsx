@@ -77,17 +77,8 @@ const OTPScreen = ({ navigation, route }: any) => {
     }
   };
 
-  return (
-    <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
+  const scrollContent = (
+    <>
           {/* Back button */}
           <TouchableOpacity
             style={styles.backBtn}
@@ -159,14 +150,45 @@ const OTPScreen = ({ navigation, route }: any) => {
               </Text>
             </TouchableOpacity>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+    </>
+  );
+
+  return (
+    <SafeAreaView style={styles.safe}>
+      {Platform.OS === 'ios' ? (
+        <KeyboardAvoidingView style={styles.keyboardWrap} behavior="padding">
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={styles.scroll}
+            keyboardShouldPersistTaps="always"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+          >
+            {scrollContent}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      ) : (
+        <View style={styles.keyboardWrap}>
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={styles.scroll}
+            keyboardShouldPersistTaps="always"
+            keyboardDismissMode="none"
+            showsVerticalScrollIndicator={false}
+            overScrollMode="never"
+          >
+            {scrollContent}
+          </ScrollView>
+        </View>
+      )}
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.backgroundSecondary },
+  safe: { flex: 1, minHeight: 0, backgroundColor: colors.backgroundSecondary },
+  keyboardWrap: { flex: 1, minHeight: 0 },
+  scrollView: { flex: 1, minHeight: 0 },
   scroll: {
     flexGrow: 1,
     paddingHorizontal: spacing.xl,

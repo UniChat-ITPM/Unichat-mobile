@@ -24,7 +24,8 @@ import { completeProfile, updateUserById } from '../services/auth';
 import { getProfileImageUrl } from '../utils/avatar';
 import { toBase64DataUri } from '../utils/image';
 import {
-  isValidUsername,
+  isValidDisplayName,
+  normalizeDisplayName,
   isValidEmail,
   isValidE164,
   validateProfileImage,
@@ -36,6 +37,7 @@ const ProfileSetupScreen = ({ navigation }: any) => {
   const existingPhoto = getProfileImageUrl(user);
   const isExistingUser = user?.profileCompleted === true;
 
+  const [setupStep, setSetupStep] = useState<1 | 2>(1);
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
   const [selectedImage, setSelectedImage] = useState<ProfileImage | null>(null);
@@ -50,9 +52,11 @@ const ProfileSetupScreen = ({ navigation }: any) => {
   const validateForm = (): boolean => {
     let valid = true;
 
-    const trimmedName = displayName.trim();
-    if (!isValidUsername(trimmedName)) {
-      setNameError('3–50 characters: letters, numbers, and underscore only');
+    const trimmedName = normalizeDisplayName(displayName);
+    if (!isValidDisplayName(trimmedName)) {
+      setNameError(
+        '3–50 characters: letters, numbers, underscores, and spaces between names',
+      );
       valid = false;
     } else {
       setNameError('');
@@ -121,7 +125,8 @@ const ProfileSetupScreen = ({ navigation }: any) => {
 
   const hasChanges = useMemo(() => {
     if (selectedImage) return true;
-    if (displayName.trim() !== (user?.displayName ?? '')) return true;
+    const userNormName = normalizeDisplayName(user?.displayName ?? '');
+    if (normalizeDisplayName(displayName) !== userNormName) return true;
     if (email.trim() !== (user?.email ?? '')) return true;
     return false;
   }, [displayName, email, selectedImage, user]);
@@ -138,8 +143,8 @@ const ProfileSetupScreen = ({ navigation }: any) => {
     try {
       if (isExistingUser) {
         const payload: UpdateUserPayload = {};
-        if (displayName.trim() !== (user!.displayName ?? '')) {
-          payload.displayName = displayName.trim();
+        if (normalizeDisplayName(displayName) !== normalizeDisplayName(user!.displayName ?? '')) {
+          payload.displayName = normalizeDisplayName(displayName);
         }
         if (email.trim() !== (user!.email ?? '')) {
           payload.email = email.trim();
@@ -151,15 +156,15 @@ const ProfileSetupScreen = ({ navigation }: any) => {
           );
         }
         const response = await updateUserById(user!.id, payload);
-        await completeAuthentication(response.user);
+        await completeAuthentication(response.user, response.accessToken);
       } else {
         const response = await completeProfile({
           phoneNumber,
-          username: displayName.trim(),
+          username: normalizeDisplayName(displayName),
           email: email.trim(),
           profilePhoto: selectedImage ?? undefined,
         });
-        await completeAuthentication(response.user);
+        await completeAuthentication(response.user, response.accessToken);
       }
     } catch (err: any) {
       const status = err?.response?.status;
@@ -188,11 +193,35 @@ const ProfileSetupScreen = ({ navigation }: any) => {
     }
   };
 
-  const isFormValid =
-    displayName.trim().length >= 3 &&
-    email.trim().length > 0 &&
-    !nameError &&
+  const normalizedName = normalizeDisplayName(displayName);
+  const step1Ready = isValidDisplayName(normalizedName) && !nameError;
+  const step2Ready =
+    step1Ready &&
+    isValidEmail(email.trim()) &&
     !emailError;
+
+  const handleBack = () => {
+    if (setupStep === 2) {
+      setSetupStep(1);
+    } else {
+      navigation.goBack();
+    }
+  };
+
+  const handleContinueStep1 = () => {
+    if (!isValidDisplayName(normalizedName)) {
+      setNameError(
+        '3–50 characters: letters, numbers, underscores, and spaces between names',
+      );
+      return;
+    }
+    setNameError('');
+    if (!isValidE164(phoneNumber)) {
+      Alert.alert('Error', 'Invalid phone number. Please go back and verify again.');
+      return;
+    }
+    setSetupStep(2);
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -208,23 +237,38 @@ const ProfileSetupScreen = ({ navigation }: any) => {
           {/* Back button */}
           <TouchableOpacity
             style={styles.backBtn}
-            onPress={() => navigation.goBack()}
+            onPress={handleBack}
             disabled={loading}
           >
             <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
           </TouchableOpacity>
 
           {/* Header */}
+          <View style={styles.stepRow}>
+            <View style={[styles.stepDot, setupStep === 1 && styles.stepDotActive]} />
+            <View style={[styles.stepDot, setupStep === 2 && styles.stepDotActive]} />
+          </View>
+          <Text style={styles.stepHint}>Step {setupStep} of 2</Text>
           <Text style={styles.title}>
-            {isExistingUser ? 'Welcome Back!' : 'Set Up Your Profile'}
+            {setupStep === 1
+              ? isExistingUser
+                ? 'Your name'
+                : "What's your name?"
+              : isExistingUser
+                ? 'Welcome Back!'
+                : 'Almost there'}
           </Text>
           <Text style={styles.subtitle}>
-            {isExistingUser
-              ? 'Update your details or continue to your chats'
-              : 'Add your name, email and photo so others can recognize you'}
+            {setupStep === 1
+              ? isExistingUser
+                ? 'Update how your name appears. You can use two or more names with a space.'
+                : 'Enter the name others will see. Example: Dumindu Dissanayake'
+              : isExistingUser
+                ? 'Update your email or photo, then continue to your chats'
+                : 'Add your email and optional profile photo'}
           </Text>
 
-          {/* Profile photo */}
+          {setupStep === 2 ? (
           <View style={styles.photoSection}>
             <TouchableOpacity
               style={styles.photoWrapper}
@@ -282,62 +326,82 @@ const ProfileSetupScreen = ({ navigation }: any) => {
               </View>
             ) : null}
           </View>
+          ) : null}
 
           {/* Form card */}
           <View style={styles.card}>
-            <TextInputField
-              label="Display Name"
-              placeholder="Enter your display name"
-              value={displayName}
-              onChangeText={(text: string) => {
-                setDisplayName(text);
-                if (nameError) setNameError('');
-              }}
-              autoCapitalize="none"
-              maxLength={50}
-              editable={!loading}
-              errorText={nameError}
-              leftElement={
-                <Ionicons name="person-outline" size={20} color={colors.textMuted} />
-              }
-            />
+            {setupStep === 1 ? (
+              <>
+                <TextInputField
+                  label="Name"
+                  placeholder="e.g. Dumindu Dissanayake"
+                  value={displayName}
+                  onChangeText={(text: string) => {
+                    setDisplayName(text);
+                    if (nameError) setNameError('');
+                  }}
+                  autoCapitalize="words"
+                  maxLength={50}
+                  editable={!loading}
+                  errorText={nameError}
+                  leftElement={
+                    <Ionicons name="person-outline" size={20} color={colors.textMuted} />
+                  }
+                />
+                <PrimaryButton
+                  title="Continue"
+                  onPress={handleContinueStep1}
+                  disabled={!step1Ready || loading}
+                  loading={false}
+                  style={styles.ctaButton}
+                />
+              </>
+            ) : (
+              <>
+                <TextInputField
+                  label="Email"
+                  placeholder="Enter your email address"
+                  value={email}
+                  onChangeText={(text: string) => {
+                    setEmail(text);
+                    if (emailError) setEmailError('');
+                  }}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  maxLength={254}
+                  editable={!loading}
+                  errorText={emailError}
+                  leftElement={
+                    <Ionicons name="mail-outline" size={20} color={colors.textMuted} />
+                  }
+                />
 
-            <TextInputField
-              label="Email"
-              placeholder="Enter your email address"
-              value={email}
-              onChangeText={(text: string) => {
-                setEmail(text);
-                if (emailError) setEmailError('');
-              }}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              maxLength={254}
-              editable={!loading}
-              errorText={emailError}
-              leftElement={
-                <Ionicons name="mail-outline" size={20} color={colors.textMuted} />
-              }
-            />
+                <PrimaryButton
+                  title={
+                    isExistingUser
+                      ? hasChanges
+                        ? 'Save & Continue'
+                        : 'Continue'
+                      : 'Complete Profile'
+                  }
+                  onPress={handleSubmit}
+                  disabled={!step2Ready || loading}
+                  loading={loading}
+                  style={styles.ctaButton}
+                />
 
-            <PrimaryButton
-              title={isExistingUser ? (hasChanges ? 'Save & Continue' : 'Continue') : 'Complete Profile'}
-              onPress={handleSubmit}
-              disabled={!isFormValid || loading}
-              loading={loading}
-              style={styles.ctaButton}
-            />
-
-            <View style={styles.helperRow}>
-              <Ionicons
-                name="information-circle-outline"
-                size={14}
-                color={colors.textMuted}
-              />
-              <Text style={styles.helperText}>
-                Profile photo is optional (max 5 MB)
-              </Text>
-            </View>
+                <View style={styles.helperRow}>
+                  <Ionicons
+                    name="information-circle-outline"
+                    size={14}
+                    color={colors.textMuted}
+                  />
+                  <Text style={styles.helperText}>
+                    Profile photo is optional (max 5 MB)
+                  </Text>
+                </View>
+              </>
+            )}
           </View>
 
           {/* Progress indicator */}
@@ -409,6 +473,29 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: spacing.xxl,
     paddingHorizontal: spacing.base,
+  },
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  stepDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.border,
+  },
+  stepDotActive: {
+    backgroundColor: colors.primary,
+    width: 22,
+    borderRadius: 5,
+  },
+  stepHint: {
+    fontSize: typography.fontSizeXS,
+    fontWeight: typography.fontWeightSemiBold,
+    color: colors.textMuted,
+    marginBottom: spacing.sm,
   },
 
   /* ── Photo ───────────────────────────────────────── */

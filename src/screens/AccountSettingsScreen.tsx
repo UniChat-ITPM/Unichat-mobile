@@ -11,12 +11,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { spacing } from '../theme/spacing';
+import { scrollPaddingAboveMainTabBar } from '../theme/layout';
 import { useAuth } from '../context/AuthContext';
 
 const AccountSettingsScreen = ({ navigation }) => {
   const { user } = useAuth();
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
@@ -29,7 +30,10 @@ const AccountSettingsScreen = ({ navigation }) => {
       </View>
 
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[
+          styles.scroll,
+          { paddingBottom: scrollPaddingAboveMainTabBar },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         <Text style={styles.sectionTitle}>Account Info</Text>
@@ -58,8 +62,6 @@ const AccountSettingsScreen = ({ navigation }) => {
           <Text style={styles.actionTitle}>Change Phone Number</Text>
           <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
         </TouchableOpacity>
-        
-        <View style={{ height: spacing.xxxl }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -94,10 +96,8 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   scroll: {
-    flexGrow: 1,
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.base,
-    paddingBottom: spacing.xxxl,
   },
   sectionTitle: {
     fontSize: typography.fontSizeSM,

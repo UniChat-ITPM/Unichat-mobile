@@ -14,6 +14,8 @@ import {
   Alert,
   Image,
   Keyboard,
+  ActivityIndicator,
+  InteractionManager,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Audio } from 'expo-av';
@@ -28,11 +30,29 @@ import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
 import { useAuth } from '../context/AuthContext';
+import { useChatSocket } from '../hooks/useChatSocket';
+import type { JoinConversationFailure, RealtimeEnvelope } from '../types/realtime';
+import {
+  deleteMessage,
+  fetchConversationMessages,
+  messagesErrorMessage,
+  postTextMessage,
+  uploadAndSendChatMedia,
+} from '../services/messagesApi';
+import {
+  loadCachedMessagesRaw,
+  prependMessageDtoToCache,
+  saveCachedMessagesRaw,
+} from '../services/chatCache';
+import { mapUnknownMessagePayload, type MessageMapContext } from '../utils/messageMapping';
+import { prepareChatImageForUpload } from '../utils/prepareChatImage';
 import { ChatImageViewer, formatChatImageViewerDate } from '../components/chat/ChatImageViewer';
 import { SCREENS } from '../constants';
 
 export type ChatScreenParams = {
   name: string;
+  /** Open Socket.IO room for this thread (UUID from API in production). */
+  conversationId?: string;
   status?: string;
   unreadBackHrefCount?: number;
   isGroup?: boolean;
@@ -200,16 +220,71 @@ function bubbleRadiusMine(firstInGroup: boolean): ViewStyle {
   };
 }
 
+const CHAT_SKELETON_ROWS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+/** Shimmer-style placeholders while history loads (avoids blank white screen). */
+function ChatHistorySkeleton() {
+  return (
+    <View style={chatSkeletonStyles.wrap}>
+      {CHAT_SKELETON_ROWS.map((i) => (
+        <View
+          key={i}
+          style={[chatSkeletonStyles.row, i % 2 === 0 ? chatSkeletonStyles.rowLeft : chatSkeletonStyles.rowRight]}
+        >
+          <View style={chatSkeletonStyles.bar} />
+        </View>
+      ))}
+      <ActivityIndicator style={chatSkeletonStyles.spinner} color={colors.primary} size="small" />
+    </View>
+  );
+}
+
+const chatSkeletonStyles = StyleSheet.create({
+  wrap: {
+    flex: 1,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    justifyContent: 'flex-end',
+    paddingBottom: spacing.lg,
+  },
+  row: { marginBottom: 10, flexDirection: 'row' },
+  rowLeft: { justifyContent: 'flex-start' },
+  rowRight: { justifyContent: 'flex-end' },
+  bar: {
+    width: '72%',
+    maxWidth: 280,
+    height: 38,
+    borderRadius: 16,
+    backgroundColor: 'rgba(79, 70, 229, 0.08)',
+  },
+  spinner: { marginTop: spacing.md },
+});
+
 const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
   const params = route.params as ChatScreenParams | undefined;
   const title = params?.name ?? 'Chat';
+  const conversationId = params?.conversationId;
   const statusLine = params?.status ?? 'last seen today at 12:56';
   const backUnread = params?.unreadBackHrefCount;
   const { user } = useAuth();
 
+  const messageMapContext = useMemo<MessageMapContext>(
+    () => ({ peerDisplayName: title }),
+    [title],
+  );
+
   const listRef = useRef<FlatList<ChatMessage>>(null);
+  /** When true, keep the list pinned to the newest message (bottom). */
+  const stickToBottomRef = useRef(true);
+
+  useEffect(() => {
+    stickToBottomRef.current = true;
+  }, [conversationId]);
   const lastReplySwipeRef = useRef<Swipeable | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>(() => [...DEMO_MESSAGES]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() =>
+    conversationId ? [] : [...DEMO_MESSAGES],
+  );
+  const [historyLoading, setHistoryLoading] = useState(() => Boolean(conversationId));
   const [draft, setDraft] = useState('');
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
   const [menuMessage, setMenuMessage] = useState<ChatMessage | null>(null);
@@ -223,6 +298,208 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
   const [voiceIsPlaying, setVoiceIsPlaying] = useState(false);
   const [voiceProgress, setVoiceProgress] = useState(0);
   const [imageViewerMessage, setImageViewerMessage] = useState<ChatMessage | null>(null);
+
+  const handleRealtime = useCallback(
+    (envelope: RealtimeEnvelope) => {
+      if (!conversationId || typeof envelope.payload?.conversationId !== 'string') {
+        return;
+      }
+      if (envelope.payload.conversationId !== conversationId) {
+        return;
+      }
+      const p = envelope.payload as Record<string, unknown>;
+      const t = envelope.type;
+
+      if (t === 'MESSAGE_CREATED') {
+        const row = mapUnknownMessagePayload(p, user?.id, messageMapContext);
+        if (row) {
+          void prependMessageDtoToCache(conversationId, p as Record<string, unknown>);
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === row.id)) {
+              return prev;
+            }
+            if (row.isMine) {
+              const pendingIdx = prev.findIndex((m) => m.id.startsWith('pending-') && m.isMine);
+              if (pendingIdx !== -1) {
+                const next = [...prev];
+                next[pendingIdx] = {
+                  ...(row as ChatMessage),
+                  quote: row.quote ?? prev[pendingIdx].quote,
+                };
+                return next.sort((a, b) => (a.sentAtMs ?? 0) - (b.sentAtMs ?? 0));
+              }
+            }
+            return [...prev, row as ChatMessage].sort(
+              (a, b) => (a.sentAtMs ?? 0) - (b.sentAtMs ?? 0),
+            );
+          });
+          requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+        }
+        return;
+      }
+      if (t === 'MESSAGE_EDITED') {
+        const newText = typeof p.newText === 'string' ? p.newText : null;
+        const mid = p.messageId ?? p.id;
+        if (mid != null && newText != null) {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === String(mid) ? { ...m, body: newText } : m)),
+          );
+          return;
+        }
+        const row = mapUnknownMessagePayload(p, user?.id, messageMapContext);
+        if (!row) {
+          return;
+        }
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === row.id ? ({ ...m, body: row.body, time: row.time, quote: row.quote } as ChatMessage) : m,
+          ),
+        );
+        return;
+      }
+      if (t === 'MESSAGE_DELETED') {
+        const id = p.messageId ?? p.id;
+        if (id == null) {
+          return;
+        }
+        setMessages((prev) => prev.filter((m) => m.id !== String(id)));
+        return;
+      }
+      if (t === 'MESSAGE_STATUS_UPDATED') {
+        const id = p.messageId ?? p.id;
+        if (id == null) {
+          return;
+        }
+        const st = String(p.status ?? '').toUpperCase();
+        const read = Boolean(p.read) || st === 'READ';
+        setMessages((prev) =>
+          prev.map((m) => (m.id === String(id) ? { ...m, read } : m)),
+        );
+      }
+    },
+    [conversationId, user?.id, messageMapContext],
+  );
+
+  const handleJoinFailure = useCallback(
+    (joinedId: string, failure: JoinConversationFailure) => {
+      if (joinedId !== conversationId) {
+        return;
+      }
+      if (failure.error === 'FORBIDDEN') {
+        Alert.alert('Cannot open chat', 'You do not have access to this conversation.');
+      }
+    },
+    [conversationId],
+  );
+
+  const scrollListToLatest = useCallback(() => {
+    if (!stickToBottomRef.current) {
+      return;
+    }
+    const run = () => listRef.current?.scrollToEnd({ animated: false });
+    run();
+    requestAnimationFrame(run);
+    setTimeout(run, 32);
+    setTimeout(run, 150);
+    setTimeout(run, 400);
+  }, []);
+
+  const onMessageListContentSizeChange = useCallback(() => {
+    if (!conversationId || messages.length === 0) {
+      return;
+    }
+    scrollListToLatest();
+  }, [conversationId, messages.length, scrollListToLatest]);
+
+  const { joinConversation, leaveConversation } = useChatSocket({
+    onRealtime: handleRealtime,
+    onJoinFailure: handleJoinFailure,
+    onDisconnect: (reason) => {
+      if (__DEV__) {
+        console.warn('[ChatScreen] socket disconnected:', reason);
+      }
+    },
+  });
+
+  useEffect(() => {
+    if (!conversationId) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const ack = await joinConversation(conversationId);
+      if (cancelled) {
+        return;
+      }
+      if (!ack.ok && 'error' in ack && ack.error === 'FORBIDDEN') {
+        Alert.alert('Cannot open chat', 'You do not have access to this conversation.');
+      }
+    })();
+    return () => {
+      cancelled = true;
+      leaveConversation(conversationId);
+    };
+  }, [conversationId, joinConversation, leaveConversation]);
+
+  useEffect(() => {
+    if (!conversationId) {
+      setHistoryLoading(false);
+      setMessages([...DEMO_MESSAGES]);
+      return;
+    }
+    setHistoryLoading(true);
+    setMessages([]);
+    let cancelled = false;
+    (async () => {
+      const rawCache = await loadCachedMessagesRaw(conversationId);
+      if (rawCache && !cancelled) {
+        try {
+          const parsed = JSON.parse(rawCache) as unknown[];
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const chronological = [...parsed].reverse();
+            const mapped = chronological
+              .map((row) => mapUnknownMessagePayload(row, user?.id, messageMapContext))
+              .filter((m): m is NonNullable<typeof m> => Boolean(m))
+              .map((m) => ({ ...m }) as ChatMessage);
+            setMessages(mapped);
+            setHistoryLoading(false);
+            stickToBottomRef.current = true;
+            InteractionManager.runAfterInteractions(() => scrollListToLatest());
+            requestAnimationFrame(() => scrollListToLatest());
+          }
+        } catch {
+          /* ignore corrupt cache */
+        }
+      }
+      try {
+        const { messages: rows } = await fetchConversationMessages(conversationId, { limit: 80 });
+        if (cancelled) {
+          return;
+        }
+        void saveCachedMessagesRaw(conversationId, JSON.stringify(rows));
+        const chronological = [...rows].reverse();
+        const mapped = chronological
+          .map((row) => mapUnknownMessagePayload(row, user?.id, messageMapContext))
+          .filter((m): m is NonNullable<typeof m> => Boolean(m))
+          .map((m) => ({ ...m }) as ChatMessage);
+        setMessages(mapped);
+        stickToBottomRef.current = true;
+        InteractionManager.runAfterInteractions(() => scrollListToLatest());
+        requestAnimationFrame(() => scrollListToLatest());
+      } catch (e) {
+        if (!cancelled) {
+          Alert.alert('Could not load messages', messagesErrorMessage(e));
+        }
+      } finally {
+        if (!cancelled) {
+          setHistoryLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId, user?.id, messageMapContext, scrollListToLatest]);
 
   const mediaLinksDocsCount = useMemo(
     () => messages.filter((m) => Boolean(m.imageUri || m.docName)).length,
@@ -269,7 +546,7 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
     closeMessageMenu();
   }, [menuMessage, closeMessageMenu]);
 
-  const handleMenuDelete = useCallback(() => {
+  const handleMenuDelete = useCallback(async () => {
     if (!menuMessage) {
       return;
     }
@@ -278,9 +555,20 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
       closeMessageMenu();
       return;
     }
-    setMessages((prev) => prev.filter((m) => m.id !== menuMessage.id));
+    const mid = menuMessage.id;
+    if (conversationId && !mid.startsWith('local-')) {
+      closeMessageMenu();
+      try {
+        await deleteMessage(mid);
+        setMessages((prev) => prev.filter((m) => m.id !== mid));
+      } catch (e) {
+        Alert.alert('Could not delete', messagesErrorMessage(e));
+      }
+      return;
+    }
+    setMessages((prev) => prev.filter((m) => m.id !== mid));
     closeMessageMenu();
-  }, [menuMessage, closeMessageMenu]);
+  }, [menuMessage, closeMessageMenu, conversationId]);
 
   const handleMenuForward = useCallback(() => {
     closeMessageMenu();
@@ -293,6 +581,7 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
   }, [closeMessageMenu]);
 
   const scrollToEnd = useCallback(() => {
+    stickToBottomRef.current = true;
     listRef.current?.scrollToEnd({ animated: true });
   }, []);
 
@@ -462,6 +751,93 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
   const selfInitial =
     user?.displayName?.trim().charAt(0).toUpperCase() || user?.phoneNumber?.slice(-2) || '?';
 
+  const sendUploadedMedia = useCallback(
+    async (opts: {
+      fileUri: string;
+      fileName: string;
+      mimeType: string;
+      localImageUri?: string;
+      localVoiceUri?: string;
+      voiceDurationSec?: number;
+      docMeta?: { docName: string; docMimeType?: string; docSizeBytes?: number };
+    }) => {
+      if (!conversationId || !user?.id) {
+        Alert.alert('Chat', 'Open a conversation first.');
+        return;
+      }
+      const reply = replyTarget;
+      const quote: Quote | undefined = reply
+        ? {
+            author: reply.isMine ? 'You' : title,
+            snippet:
+              reply.body.length > 72 ? `${reply.body.slice(0, 69)}…` : reply.body || '…',
+            accent: reply.isMine ? colors.secondary : colors.primary,
+          }
+        : undefined;
+      const replyId =
+        reply && !String(reply.id).startsWith('local-') && !String(reply.id).startsWith('pending-')
+          ? reply.id
+          : undefined;
+      const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const now = new Date();
+      const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      const optimistic: ChatMessage = {
+        id: pendingId,
+        body: opts.localVoiceUri ? '' : opts.docMeta ? opts.docMeta.docName : ' ',
+        time,
+        isMine: true,
+        read: false,
+        sentAtMs: now.getTime(),
+        ...(opts.localImageUri ? { imageUri: opts.localImageUri } : {}),
+        ...(opts.localVoiceUri
+          ? { voiceUri: opts.localVoiceUri, voiceDurationSec: opts.voiceDurationSec ?? 0 }
+          : {}),
+        ...(opts.docMeta
+          ? {
+              docName: opts.docMeta.docName,
+              docMimeType: opts.docMeta.docMimeType,
+              docSizeBytes: opts.docMeta.docSizeBytes,
+            }
+          : {}),
+        ...(quote ? { quote } : {}),
+      };
+      setMessages((prev) => [...prev, optimistic]);
+      setReplyTarget(null);
+      requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+      try {
+        const created = await uploadAndSendChatMedia({
+          conversationId,
+          fileUri: opts.fileUri,
+          fileName: opts.fileName,
+          mimeType: opts.mimeType,
+          replyToMessageId: replyId ?? null,
+        });
+        void prependMessageDtoToCache(
+          conversationId,
+          created as unknown as Record<string, unknown>,
+        );
+        const row = mapUnknownMessagePayload(created, user.id, messageMapContext);
+        if (row) {
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === row.id)) {
+              return prev.filter((m) => m.id !== pendingId);
+            }
+            return prev.map((m) =>
+              m.id === pendingId ? ({ ...row, quote: row.quote ?? quote } as ChatMessage) : m,
+            );
+          });
+        } else {
+          setMessages((prev) => prev.filter((m) => m.id !== pendingId));
+        }
+        requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+      } catch (e) {
+        setMessages((prev) => prev.filter((m) => m.id !== pendingId));
+        Alert.alert('Could not send', messagesErrorMessage(e));
+      }
+    },
+    [conversationId, user?.id, messageMapContext, replyTarget, title],
+  );
+
   const stopRecordingAndSend = useCallback(async () => {
     const rec = recordingRef.current;
     recordingRef.current = null;
@@ -482,9 +858,14 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
         Alert.alert('Recording', 'Recording was too short. Hold the mic for a moment longer.');
         return;
       }
-      pushOutgoing({
-        body: '',
-        voiceUri: uri,
+      const lower = uri.toLowerCase();
+      const ext = lower.includes('.') ? lower.split('.').pop() : 'm4a';
+      const safeExt = ext === 'mp4' || ext === 'm4a' ? ext : 'm4a';
+      await sendUploadedMedia({
+        fileUri: uri,
+        fileName: `voice-${Date.now()}.${safeExt}`,
+        mimeType: ext === 'caf' ? 'audio/x-caf' : 'audio/mp4',
+        localVoiceUri: uri,
         voiceDurationSec: sec,
       });
     } catch {
@@ -494,7 +875,7 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
       setRecordDurationMs(0);
       recordDurationMsRef.current = 0;
     }
-  }, [pushOutgoing]);
+  }, [sendUploadedMedia]);
 
   const startRecording = useCallback(async () => {
     if (isRecording) {
@@ -511,7 +892,7 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
         playsInSilentModeIOS: true,
       });
       const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.LOW_QUALITY);
       recordDurationMsRef.current = 0;
       recording.setOnRecordingStatusUpdate((s) => {
         if (s.durationMillis != null && s.durationMillis > 0) {
@@ -547,13 +928,20 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
     }
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.85,
+      quality: 0.92,
     });
     if (res.canceled || !res.assets?.[0]) {
       return;
     }
-    pushOutgoing({ body: '', imageUri: res.assets[0].uri });
-  }, [pushOutgoing]);
+    const asset = res.assets[0];
+    const prepared = await prepareChatImageForUpload(asset.uri, asset.fileName);
+    await sendUploadedMedia({
+      fileUri: prepared.uri,
+      fileName: prepared.fileName,
+      mimeType: prepared.mimeType,
+      localImageUri: prepared.uri,
+    });
+  }, [sendUploadedMedia]);
 
   const handleTakeCamera = useCallback(async () => {
     setShowAttachSheet(false);
@@ -562,12 +950,19 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
       Alert.alert('Camera', 'Allow camera access to take photos.');
       return;
     }
-    const res = await ImagePicker.launchCameraAsync({ quality: 0.85 });
+    const res = await ImagePicker.launchCameraAsync({ quality: 0.92 });
     if (res.canceled || !res.assets?.[0]) {
       return;
     }
-    pushOutgoing({ body: '', imageUri: res.assets[0].uri });
-  }, [pushOutgoing]);
+    const asset = res.assets[0];
+    const prepared = await prepareChatImageForUpload(asset.uri, asset.fileName);
+    await sendUploadedMedia({
+      fileUri: prepared.uri,
+      fileName: prepared.fileName,
+      mimeType: prepared.mimeType,
+      localImageUri: prepared.uri,
+    });
+  }, [sendUploadedMedia]);
 
   const handlePickDocument = useCallback(async () => {
     setShowAttachSheet(false);
@@ -576,13 +971,17 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
       return;
     }
     const a = res.assets[0];
-    pushOutgoing({
-      body: a.name,
-      docName: a.name,
-      docMimeType: a.mimeType ?? undefined,
-      docSizeBytes: typeof a.size === 'number' ? a.size : undefined,
+    await sendUploadedMedia({
+      fileUri: a.uri,
+      fileName: a.name,
+      mimeType: a.mimeType ?? 'application/octet-stream',
+      docMeta: {
+        docName: a.name,
+        docMimeType: a.mimeType ?? undefined,
+        docSizeBytes: typeof a.size === 'number' ? a.size : undefined,
+      },
     });
-  }, [pushOutgoing]);
+  }, [sendUploadedMedia]);
 
   const openContactPicker = useCallback(async () => {
     setShowAttachSheet(false);
@@ -616,7 +1015,7 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
     [pushOutgoing],
   );
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const text = draft.trim();
     if (!text) {
       return;
@@ -632,6 +1031,59 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
         }
       : undefined;
 
+    if (conversationId && user?.id) {
+      const replyId =
+        reply && !String(reply.id).startsWith('local-') && !String(reply.id).startsWith('pending-')
+          ? reply.id
+          : undefined;
+      const optimisticId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const optimistic: ChatMessage = {
+        id: optimisticId,
+        body: text,
+        time,
+        isMine: true,
+        read: false,
+        sentAtMs: now.getTime(),
+        ...(quote ? { quote } : {}),
+      };
+      setMessages((prev) => [...prev, optimistic]);
+      setDraft('');
+      setReplyTarget(null);
+      requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+
+      try {
+        const created = await postTextMessage({
+          conversationId,
+          text,
+          replyToMessageId: replyId ?? null,
+        });
+        void prependMessageDtoToCache(
+          conversationId,
+          created as unknown as Record<string, unknown>,
+        );
+        const row = mapUnknownMessagePayload(created, user.id, messageMapContext);
+        if (row) {
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === row.id)) {
+              return prev
+                .filter((m) => m.id !== optimisticId)
+                .map((m) => (m.id === row.id ? ({ ...m, quote: row.quote ?? m.quote } as ChatMessage) : m));
+            }
+            return prev.map((m) =>
+              m.id === optimisticId ? ({ ...row, quote: row.quote ?? quote } as ChatMessage) : m,
+            );
+          });
+        } else {
+          setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+        }
+        requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+      } catch (e) {
+        setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+        Alert.alert('Could not send', messagesErrorMessage(e));
+      }
+      return;
+    }
+
     setMessages((prev) => [
       ...prev,
       {
@@ -646,11 +1098,12 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
     ]);
     setDraft('');
     setReplyTarget(null);
-  }, [draft, replyTarget, title]);
+  }, [draft, replyTarget, title, conversationId, user?.id, messageMapContext]);
 
   const handleScroll = useCallback((e: { nativeEvent: { contentOffset: { y: number }; layoutMeasurement: { height: number }; contentSize: { height: number } } }) => {
     const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
     const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    stickToBottomRef.current = distanceFromBottom <= 160;
     setShowScrollDown(distanceFromBottom > 120);
   }, []);
 
@@ -992,18 +1445,29 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
         </View>
 
         <View style={styles.chatSurface}>
+          {historyLoading && messages.length === 0 ? (
+            <ChatHistorySkeleton />
+          ) : (
           <FlatList
             ref={listRef}
             data={messages}
             keyExtractor={(m) => m.id}
             renderItem={renderMessage}
-            contentContainerStyle={styles.messageList}
+            contentContainerStyle={[
+              styles.messageList,
+              messages.length > 0 ? styles.messageListStickToBottom : null,
+            ]}
             showsVerticalScrollIndicator={false}
             onScroll={handleScroll}
+            onContentSizeChange={onMessageListContentSizeChange}
             scrollEventThrottle={16}
-            onContentSizeChange={scrollToEnd}
             keyboardShouldPersistTaps="handled"
+            removeClippedSubviews={Platform.OS === 'android'}
+            initialNumToRender={24}
+            maxToRenderPerBatch={12}
+            windowSize={7}
           />
+          )}
 
           {showScrollDown ? (
             <TouchableOpacity style={styles.scrollFab} onPress={scrollToEnd} activeOpacity={0.9}>
@@ -1367,6 +1831,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     paddingBottom: spacing.lg,
+  },
+  messageListStickToBottom: {
+    flexGrow: 1,
+    justifyContent: 'flex-end',
   },
   row: {
     maxWidth: '88%',

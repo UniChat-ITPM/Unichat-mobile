@@ -51,12 +51,15 @@ export interface VerifyOtpResponse {
   isNewUser: boolean;
   requiresProfileCompletion: boolean;
   user: User;
+  /** JWT for Socket.IO `auth.token` and REST `Authorization` */
+  accessToken?: string;
 }
 
 export interface CompleteProfileResponse {
   success: boolean;
   message: string;
   user: User;
+  accessToken?: string;
 }
 
 export interface UpdateUserPayload {
@@ -69,6 +72,7 @@ export interface UpdateUserPayload {
 export interface UpdateUserResponse {
   success: boolean;
   user: User;
+  accessToken?: string;
 }
 
 /** Generic error body the backend may return */

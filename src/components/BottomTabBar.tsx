@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
@@ -21,8 +22,9 @@ const TAB_CONFIG: Array<{ key: HomeTabKey; label: string; icon: keyof typeof Ion
   ];
 
 const BottomTabBar = ({ activeTab, onTabPress }: BottomTabBarProps) => {
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.wrapper}>
+    <View style={[styles.wrapper, { paddingBottom: spacing.base + insets.bottom }]}>
       {TAB_CONFIG.map((tab) => {
         const active = activeTab === tab.key;
         return (
@@ -56,7 +58,6 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     paddingHorizontal: spacing.base,
     paddingTop: spacing.sm,
-    paddingBottom: spacing.base,
   },
   tabButton: {
     flex: 1,

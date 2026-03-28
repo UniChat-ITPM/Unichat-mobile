@@ -19,6 +19,7 @@ import TextInputField from '../components/TextInputField';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { spacing } from '../theme/spacing';
+import { scrollPaddingAboveMainTabBar } from '../theme/layout';
 import { useAuth } from '../context/AuthContext';
 import { updateUserById } from '../services/auth';
 import { getProfileImageUrl } from '../utils/avatar';
@@ -194,13 +195,16 @@ const EditProfileScreen = ({ navigation }: any) => {
   const displayedPhoto = selectedImage?.uri ?? currentPhoto;
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView
-          contentContainerStyle={styles.scroll}
+          contentContainerStyle={[
+            styles.scroll,
+            { paddingBottom: scrollPaddingAboveMainTabBar },
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
@@ -346,9 +350,8 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   safe: { flex: 1, backgroundColor: colors.backgroundSecondary },
   scroll: {
-    flexGrow: 1,
     paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.xl,
+    paddingTop: spacing.xl,
     alignItems: 'center',
   },
   header: {

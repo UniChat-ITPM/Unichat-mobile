@@ -15,7 +15,10 @@ const ParticipantProfileScreen = ({
   navigation,
   route,
 }: {
-  navigation: { goBack: () => void; navigate: (name: string) => void };
+  navigation: {
+    goBack: () => void;
+    navigate: (name: string, params?: object) => void;
+  };
   route: { params?: ParticipantProfileScreenParams };
 }) => {
   const params = route.params ?? { participantName: 'Chat' };
@@ -26,7 +29,10 @@ const ParticipantProfileScreen = ({
   }, []);
 
   const onNotification = useCallback(() => {
-    navigation.navigate(SCREENS.NOTIFICATIONS_SETTINGS);
+    navigation.navigate(SCREENS.MAIN, {
+      screen: SCREENS.TAB_SETTINGS,
+      params: { screen: SCREENS.NOTIFICATIONS_SETTINGS },
+    });
   }, [navigation]);
 
   const onDeleteChat = useCallback(() => {
