@@ -41,6 +41,8 @@ export type CallsMainViewProps = {
   onQuickAction?: (key: QuickKey) => void;
   onShortcutContact?: () => void;
   onCallInfo?: (entry: CallLogEntry) => void;
+  /** Tap main row area (not the info button) — e.g. open demo call */
+  onCallLogPress?: (entry: CallLogEntry) => void;
 };
 
 function QuickActionChip({
@@ -80,9 +82,11 @@ function QuickActionChip({
 function CallLogRow({
   item,
   onInfo,
+  onPress,
 }: {
   item: CallLogEntry;
   onInfo?: () => void;
+  onPress?: () => void;
 }) {
   const initial = item.name.trim().charAt(0).toUpperCase() || 'C';
   const dirLabel = item.direction === 'incoming' ? 'Incoming' : 'Outgoing';
@@ -94,33 +98,40 @@ function CallLogRow({
 
   return (
     <View style={styles.logCard}>
-      <View style={styles.logLeft}>
-        <View style={[styles.logAvatar, { backgroundColor: item.avatarColor ?? '#EEF2FF' }]}>
-          <Text style={styles.logAvatarText}>{initial}</Text>
+      <TouchableOpacity
+        style={styles.logCardMain}
+        onPress={onPress}
+        activeOpacity={onPress ? 0.88 : 1}
+        disabled={!onPress}
+      >
+        <View style={styles.logLeft}>
+          <View style={[styles.logAvatar, { backgroundColor: item.avatarColor ?? '#EEF2FF' }]}>
+            <Text style={styles.logAvatarText}>{initial}</Text>
+          </View>
         </View>
-      </View>
 
-      <View style={styles.logBody}>
-        <View style={styles.logTop}>
-          <Text style={styles.logName} numberOfLines={1}>
-            {item.name}
-            {item.streakCount != null && item.streakCount > 1 ? (
-              <Text style={styles.logStreak}> ({item.streakCount})</Text>
+        <View style={styles.logBody}>
+          <View style={styles.logTop}>
+            <Text style={styles.logName} numberOfLines={1}>
+              {item.name}
+              {item.streakCount != null && item.streakCount > 1 ? (
+                <Text style={styles.logStreak}> ({item.streakCount})</Text>
+              ) : null}
+            </Text>
+            <Text style={styles.logTime}>{item.timeLabel}</Text>
+          </View>
+          <View style={styles.logMetaRow}>
+            <Ionicons name={dirIcon} size={14} color={dirColor} />
+            {item.isVideo ? (
+              <Ionicons name="videocam" size={14} color={colors.textSecondary} style={styles.logVideoIcon} />
             ) : null}
-          </Text>
-          <Text style={styles.logTime}>{item.timeLabel}</Text>
+            <Text style={styles.logMetaText} numberOfLines={1}>
+              {dirLabel}
+              {item.isVideo ? ' · Video' : ''}
+            </Text>
+          </View>
         </View>
-        <View style={styles.logMetaRow}>
-          <Ionicons name={dirIcon} size={14} color={dirColor} />
-          {item.isVideo ? (
-            <Ionicons name="videocam" size={14} color={colors.textSecondary} style={styles.logVideoIcon} />
-          ) : null}
-          <Text style={styles.logMetaText} numberOfLines={1}>
-            {dirLabel}
-            {item.isVideo ? ' · Video' : ''}
-          </Text>
-        </View>
-      </View>
+      </TouchableOpacity>
 
       <TouchableOpacity
         style={styles.logInfoBtn}
@@ -143,6 +154,7 @@ const CallsMainView = ({
   onQuickAction,
   onShortcutContact,
   onCallInfo,
+  onCallLogPress,
 }: CallsMainViewProps) => {
   const contact = shortcutContact ?? {
     id: 'shortcut',
@@ -219,7 +231,11 @@ const CallsMainView = ({
         </View>
       }
       renderItem={({ item }) => (
-        <CallLogRow item={item} onInfo={() => onCallInfo?.(item)} />
+        <CallLogRow
+          item={item}
+          onInfo={() => onCallInfo?.(item)}
+          onPress={onCallLogPress ? () => onCallLogPress(item) : undefined}
+        />
       )}
     />
   );
@@ -308,8 +324,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.background,
     borderRadius: 18,
-    paddingHorizontal: spacing.base,
     paddingVertical: spacing.md,
+    paddingLeft: spacing.base,
+    paddingRight: spacing.sm,
     marginBottom: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
@@ -318,6 +335,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 10,
     elevation: 3,
+  },
+  logCardMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 0,
+    paddingRight: spacing.xs,
   },
   logLeft: {
     marginRight: spacing.md,

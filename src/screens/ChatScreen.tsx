@@ -18,6 +18,7 @@ import {
   InteractionManager,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Audio } from 'expo-av';
 import * as Clipboard from 'expo-clipboard';
 import { BlurView } from 'expo-blur';
@@ -35,6 +36,7 @@ import type { JoinConversationFailure, RealtimeEnvelope } from '../types/realtim
 import {
   deleteMessage,
   fetchConversationMessages,
+  markConversationViewed,
   messagesErrorMessage,
   postTextMessage,
   uploadAndSendChatMedia,
@@ -335,6 +337,8 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
           });
           requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
         }
+        // Thread is open: keep inbox unread at 0 for this chat (server still increments for active viewers).
+        void markConversationViewed(conversationId).catch(() => {});
         return;
       }
       if (t === 'MESSAGE_EDITED') {
@@ -420,6 +424,17 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
       }
     },
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!conversationId) {
+        return;
+      }
+      void markConversationViewed(conversationId).catch(() => {
+        /* offline or stale session — list will reconcile on next load */
+      });
+    }, [conversationId]),
+  );
 
   useEffect(() => {
     if (!conversationId) {
@@ -1435,10 +1450,32 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
           </View>
 
           <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.headerIconBtn} activeOpacity={0.85}>
+            <TouchableOpacity
+              style={styles.headerIconBtn}
+              activeOpacity={0.85}
+              onPress={() =>
+                navigation.navigate(SCREENS.CALL, {
+                  mode: 'video',
+                  peerName: title,
+                  avatarColor: colors.dotInactive,
+                })
+              }
+              accessibilityLabel="Video call demo"
+            >
               <Ionicons name="videocam-outline" size={22} color={colors.textPrimary} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.headerIconBtn} activeOpacity={0.85}>
+            <TouchableOpacity
+              style={styles.headerIconBtn}
+              activeOpacity={0.85}
+              onPress={() =>
+                navigation.navigate(SCREENS.CALL, {
+                  mode: 'voice',
+                  peerName: title,
+                  avatarColor: colors.dotInactive,
+                })
+              }
+              accessibilityLabel="Voice call demo"
+            >
               <Ionicons name="call-outline" size={20} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>

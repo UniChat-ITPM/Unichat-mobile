@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -8,41 +8,31 @@ import {
   FlatList,
   TextInput,
   ScrollView,
-  Modal,
   ActivityIndicator,
   RefreshControl,
-  KeyboardAvoidingView,
-  Platform,
   Alert,
 } from 'react-native';
-import * as Contacts from 'expo-contacts';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import ChatListItem from '../components/ChatListItem';
 import { useAuth } from '../context/AuthContext';
+import { useChatsUnread } from '../context/ChatsUnreadContext';
 import { getProfileImageUrl } from '../utils/avatar';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { spacing } from '../theme/spacing';
 import { scrollPaddingAboveMainTabBar } from '../theme/layout';
 import { SCREENS } from '../constants';
-import {
-  conversationsErrorMessage,
-  createPrivateConversation,
-  listMyConversations,
-} from '../services/conversationsApi';
-import { matchContactsInBatches, usersErrorMessage } from '../services/usersApi';
-import type { ContactMatchDto } from '../types/contactMatch';
+import { conversationsErrorMessage, listMyConversations } from '../services/conversationsApi';
 import type { ChatPreviewRow } from '../utils/conversationPreview';
-import { conversationDtoToPreview } from '../utils/conversationPreview';
 import {
-  collectE164FromContacts,
-  inferDefaultCountryFromUserPhone,
-} from '../utils/contactPhoneNormalize';
-import { loadAllDeviceContacts } from '../utils/loadAllContacts';
+  conversationDtoToPreview,
+  inferIsGroupFromConversationDto,
+} from '../utils/conversationPreview';
 import { loadCachedConversationList, saveCachedConversationList } from '../services/chatCache';
 import type { ConversationSummaryDto } from '../types/conversations';
+import { subscribeRealtime } from '../services/chatSocket';
 
 type FilterKey = 'all' | 'unread' | 'favorites' | 'groups';
 
@@ -53,12 +43,6 @@ const FILTERS: Array<{ key: FilterKey; label: string }> = [
   { key: 'groups', label: 'Groups' },
 ];
 
-function isLikelyUuid(s: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    s.trim(),
-  );
-}
-
 const HomeScreen = ({
   navigation,
   variant,
@@ -66,21 +50,31 @@ const HomeScreen = ({
   navigation: any;
   variant: 'chats' | 'groups';
 }) => {
-  const { user, logout, accessToken } = useAuth();
+  const { user, logout } = useAuth();
+  const { setTabUnreadTotals } = useChatsUnread();
   const avatarUri = getProfileImageUrl(user);
+
+  const applyUnreadTabTotals = useCallback(
+    (rows: ConversationSummaryDto[]) => {
+      let allUnread = 0;
+      let groupUnread = 0;
+      for (const c of rows) {
+        const n = Math.max(0, c.unreadCount ?? 0);
+        allUnread += n;
+        if (inferIsGroupFromConversationDto(c)) {
+          groupUnread += n;
+        }
+      }
+      setTabUnreadTotals(allUnread, groupUnread);
+    },
+    [setTabUnreadTotals],
+  );
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
   const [searchText, setSearchText] = useState('');
   const [chats, setChats] = useState<ChatPreviewRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
-  const [newChatOpen, setNewChatOpen] = useState(false);
-  const [newChatTab, setNewChatTab] = useState<'contacts' | 'userid'>('contacts');
-  const [participantUserId, setParticipantUserId] = useState('');
-  const [creatingChat, setCreatingChat] = useState(false);
-  const [contactMatches, setContactMatches] = useState<ContactMatchDto[]>([]);
-  const [contactScanPhase, setContactScanPhase] = useState<'idle' | 'loading' | 'done'>('idle');
-  const [contactScanError, setContactScanError] = useState<string | null>(null);
   const firstLoadRef = useRef(true);
 
   const loadChats = useCallback(async (fromPullRefresh = false) => {
@@ -95,6 +89,7 @@ const HomeScreen = ({
           const parsed = JSON.parse(raw) as ConversationSummaryDto[];
           if (Array.isArray(parsed) && parsed.length > 0) {
             setChats(parsed.map((c, i) => conversationDtoToPreview(c, i, user?.id)));
+            applyUnreadTabTotals(parsed);
             usedCache = true;
           }
         } catch {
@@ -108,6 +103,7 @@ const HomeScreen = ({
     try {
       const rows = await listMyConversations();
       setChats(rows.map((c, i) => conversationDtoToPreview(c, i, user?.id)));
+      applyUnreadTabTotals(rows);
       void saveCachedConversationList(JSON.stringify(rows));
     } catch (e) {
       setListError(conversationsErrorMessage(e));
@@ -116,7 +112,15 @@ const HomeScreen = ({
       setRefreshing(false);
       firstLoadRef.current = false;
     }
-  }, [user?.id]);
+  }, [user?.id, applyUnreadTabTotals]);
+
+  useEffect(() => {
+    return subscribeRealtime((envelope) => {
+      if (envelope.type === 'MESSAGE_CREATED') {
+        loadChats(false);
+      }
+    });
+  }, [loadChats]);
 
   useFocusEffect(
     useCallback(() => {
@@ -174,122 +178,10 @@ const HomeScreen = ({
   const screenTitle = variant === 'groups' ? 'Groups' : 'Chats';
 
   const openNewChat = useCallback(() => {
-    if (variant === 'groups') {
-      Alert.alert('New group', 'Group creation UI is not wired yet. Use POST /conversations/group from the API.');
-      return;
-    }
-    setNewChatTab('contacts');
-    setParticipantUserId('');
-    setContactMatches([]);
-    setContactScanPhase('idle');
-    setContactScanError(null);
-    setNewChatOpen(true);
-  }, [variant]);
-
-  const closeNewChatModal = useCallback(() => {
-    if (creatingChat) {
-      return;
-    }
-    setNewChatOpen(false);
-  }, [creatingChat]);
-
-  const startDirectChat = useCallback(
-    async (participantId: string, displayTitle: string) => {
-      setCreatingChat(true);
-      try {
-        const conv = await createPrivateConversation({ participantUserId: participantId });
-        setNewChatOpen(false);
-        setParticipantUserId('');
-        setContactMatches([]);
-        setContactScanPhase('idle');
-        setContactScanError(null);
-        await loadChats();
-        navigation.navigate(SCREENS.CHAT, {
-          name: String(conv.title ?? conv.name ?? displayTitle),
-          conversationId: conv.id,
-          status: 'Tap for info',
-          unreadBackHrefCount: unreadTotal,
-          isGroup: Boolean(conv.isGroup),
-        });
-      } catch (e) {
-        Alert.alert('Could not start chat', conversationsErrorMessage(e));
-      } finally {
-        setCreatingChat(false);
-      }
-    },
-    [loadChats, navigation, unreadTotal],
-  );
-
-  const submitNewDirectChat = useCallback(async () => {
-    const pid = participantUserId.trim();
-    if (!isLikelyUuid(pid)) {
-      Alert.alert('Invalid user id', 'Enter the other user’s UUID (same format as JWT `sub`).');
-      return;
-    }
-    await startDirectChat(pid, 'Chat');
-  }, [participantUserId, startDirectChat]);
-
-  const runContactMatchFlow = useCallback(() => {
-    if (!accessToken) {
-      Alert.alert('Not signed in', 'Log in again to find people from your contacts.');
-      return;
-    }
-    setContactScanError(null);
-    Alert.alert(
-      'Find people you know on UniChat',
-      'We compare your address book numbers with UniChat accounts. Only you can start this, and numbers are sent securely over HTTPS.',
-      [
-        { text: 'Not now', style: 'cancel' },
-        {
-          text: 'Continue',
-          onPress: () => {
-            void (async () => {
-              try {
-                const perm = await Contacts.requestPermissionsAsync();
-                if (perm.status !== 'granted') {
-                  Alert.alert(
-                    'Contacts',
-                    'Allow access to contacts in your device settings to find people on UniChat.',
-                  );
-                  return;
-                }
-                setContactScanPhase('loading');
-                const deviceContacts = await loadAllDeviceContacts();
-                const defaultCountry = inferDefaultCountryFromUserPhone(user?.phoneNumber);
-                const e164List = collectE164FromContacts(deviceContacts, defaultCountry);
-                if (__DEV__) {
-                  console.log('[contact-match] unique E.164 count:', e164List.length);
-                }
-                if (e164List.length === 0) {
-                  setContactMatches([]);
-                  setContactScanPhase('done');
-                  setContactScanError(null);
-                  Alert.alert('No numbers found', 'No valid phone numbers were found in your contacts.');
-                  return;
-                }
-                const matches = await matchContactsInBatches(e164List, { excludeSelf: true });
-                if (__DEV__) {
-                  console.log('[contact-match] matches:', matches.length);
-                }
-                setContactScanPhase('done');
-                setContactMatches(matches);
-                if (matches.length === 0) {
-                  setContactScanError('None of your contacts are on UniChat yet.');
-                } else {
-                  setContactScanError(null);
-                }
-              } catch (e) {
-                setContactScanPhase('idle');
-                const msg = usersErrorMessage(e);
-                setContactScanError(msg);
-                Alert.alert('Could not match contacts', msg);
-              }
-            })();
-          },
-        },
-      ],
-    );
-  }, [accessToken, user?.phoneNumber]);
+    navigation.navigate(SCREENS.NEW_CHAT, {
+      startInGroupMode: variant === 'groups',
+    });
+  }, [navigation, variant]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -407,147 +299,6 @@ const HomeScreen = ({
         )}
       </View>
 
-      <Modal
-        visible={newChatOpen}
-        animationType="slide"
-        transparent
-        onRequestClose={closeNewChatModal}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.modalBackdrop}
-        >
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>New direct chat</Text>
-
-            <View style={styles.tabRow}>
-              <TouchableOpacity
-                style={[styles.tabPill, newChatTab === 'contacts' && styles.tabPillActive]}
-                onPress={() => setNewChatTab('contacts')}
-                disabled={creatingChat}
-                activeOpacity={0.85}
-              >
-                <Text
-                  style={[styles.tabPillText, newChatTab === 'contacts' && styles.tabPillTextActive]}
-                >
-                  Contacts
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.tabPill, newChatTab === 'userid' && styles.tabPillActive]}
-                onPress={() => setNewChatTab('userid')}
-                disabled={creatingChat}
-                activeOpacity={0.85}
-              >
-                <Text
-                  style={[styles.tabPillText, newChatTab === 'userid' && styles.tabPillTextActive]}
-                >
-                  User ID
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {newChatTab === 'contacts' ? (
-              <View style={styles.contactsPanel}>
-                <Text style={styles.modalHint}>
-                  Find people on UniChat who are in your address book. Requires contacts permission.
-                </Text>
-                <TouchableOpacity
-                  style={styles.scanContactsBtn}
-                  onPress={runContactMatchFlow}
-                  disabled={creatingChat || contactScanPhase === 'loading'}
-                  activeOpacity={0.85}
-                >
-                  {contactScanPhase === 'loading' ? (
-                    <ActivityIndicator color={colors.textLight} />
-                  ) : (
-                    <Text style={styles.scanContactsBtnText}>Find from contacts</Text>
-                  )}
-                </TouchableOpacity>
-                {contactScanError ? (
-                  <Text style={styles.contactErrorText}>{contactScanError}</Text>
-                ) : null}
-                <FlatList
-                  data={contactMatches}
-                  keyExtractor={(item) => item.userId}
-                  style={styles.matchesList}
-                  keyboardShouldPersistTaps="handled"
-                  ListEmptyComponent={
-                    contactScanPhase === 'done' && contactMatches.length === 0 && !contactScanError ? (
-                      <Text style={styles.matchesEmpty}>No matches yet. Try scanning after adding contacts.</Text>
-                    ) : null
-                  }
-                  renderItem={({ item }) => (
-                    <TouchableOpacity
-                      style={styles.matchRow}
-                      onPress={() => startDirectChat(item.userId, item.displayName)}
-                      disabled={creatingChat}
-                      activeOpacity={0.85}
-                    >
-                      {item.profilePhoto ? (
-                        <Image source={{ uri: item.profilePhoto }} style={styles.matchAvatar} />
-                      ) : (
-                        <View style={styles.matchAvatarPlaceholder}>
-                          <Text style={styles.matchAvatarLetter}>
-                            {item.displayName.trim().charAt(0).toUpperCase() || '?'}
-                          </Text>
-                        </View>
-                      )}
-                      <View style={styles.matchBody}>
-                        <Text style={styles.matchName} numberOfLines={1}>
-                          {item.displayName}
-                        </Text>
-                        {item.username ? (
-                          <Text style={styles.matchUsername} numberOfLines={1}>
-                            @{item.username}
-                          </Text>
-                        ) : null}
-                      </View>
-                      <Text style={styles.matchChat}>Chat</Text>
-                    </TouchableOpacity>
-                  )}
-                />
-              </View>
-            ) : (
-              <>
-                <Text style={styles.modalHint}>Other user’s UUID (`participantUserId`)</Text>
-                <TextInput
-                  value={participantUserId}
-                  onChangeText={setParticipantUserId}
-                  placeholder="e.g. 3fa85f64-5717-4562-b3fc-2c963f66afa6"
-                  placeholderTextColor={colors.textMuted}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={styles.modalInput}
-                />
-              </>
-            )}
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.modalBtnGhost}
-                onPress={closeNewChatModal}
-                disabled={creatingChat}
-              >
-                <Text style={styles.modalBtnGhostText}>Close</Text>
-              </TouchableOpacity>
-              {newChatTab === 'userid' ? (
-                <TouchableOpacity
-                  style={styles.modalBtnPrimary}
-                  onPress={submitNewDirectChat}
-                  disabled={creatingChat}
-                >
-                  {creatingChat ? (
-                    <ActivityIndicator color={colors.textLight} />
-                  ) : (
-                    <Text style={styles.modalBtnPrimaryText}>Start</Text>
-                  )}
-                </TouchableOpacity>
-              ) : null}
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
     </SafeAreaView>
   );
 };
@@ -690,168 +441,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   chatList: {},
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    padding: spacing.lg,
-  },
-  modalCard: {
-    backgroundColor: colors.background,
-    borderRadius: 16,
-    padding: spacing.lg,
-    maxHeight: '92%',
-  },
-  tabRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  tabPill: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    borderRadius: 12,
-    backgroundColor: colors.backgroundSecondary,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-  },
-  tabPillActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  tabPillText: {
-    fontSize: typography.fontSizeSM,
-    fontWeight: typography.fontWeightSemiBold,
-    color: colors.textSecondary,
-  },
-  tabPillTextActive: {
-    color: colors.textLight,
-  },
-  contactsPanel: {
-    minHeight: 120,
-    marginBottom: spacing.sm,
-  },
-  scanContactsBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: 12,
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  scanContactsBtnText: {
-    color: colors.textLight,
-    fontWeight: typography.fontWeightSemiBold,
-    fontSize: typography.fontSizeSM,
-  },
-  contactErrorText: {
-    color: colors.primary,
-    fontSize: typography.fontSizeXS,
-    marginBottom: spacing.sm,
-  },
-  matchesList: {
-    maxHeight: 280,
-    marginTop: spacing.xs,
-  },
-  matchesEmpty: {
-    color: colors.textMuted,
-    fontSize: typography.fontSizeXS,
-    paddingVertical: spacing.md,
-    textAlign: 'center',
-  },
-  matchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  matchAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    marginRight: spacing.sm,
-  },
-  matchAvatarPlaceholder: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    marginRight: spacing.sm,
-    backgroundColor: colors.backgroundSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  matchAvatarLetter: {
-    fontSize: typography.fontSizeLG,
-    fontWeight: typography.fontWeightBold,
-    color: colors.primary,
-  },
-  matchBody: {
-    flex: 1,
-    minWidth: 0,
-  },
-  matchName: {
-    fontSize: typography.fontSizeSM,
-    fontWeight: typography.fontWeightSemiBold,
-    color: colors.textPrimary,
-  },
-  matchUsername: {
-    fontSize: typography.fontSizeXS,
-    color: colors.textMuted,
-    marginTop: 2,
-  },
-  matchChat: {
-    fontSize: typography.fontSizeSM,
-    fontWeight: typography.fontWeightSemiBold,
-    color: colors.primary,
-    marginLeft: spacing.sm,
-  },
-  modalTitle: {
-    fontSize: typography.fontSizeLG,
-    fontWeight: typography.fontWeightBold,
-    color: colors.textPrimary,
-    marginBottom: spacing.xs,
-  },
-  modalHint: {
-    fontSize: typography.fontSizeXS,
-    color: colors.textSecondary,
-    marginBottom: spacing.sm,
-  },
-  modalInput: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    fontSize: typography.fontSizeSM,
-    color: colors.textPrimary,
-    marginBottom: spacing.md,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: spacing.sm,
-  },
-  modalBtnGhost: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-  },
-  modalBtnGhostText: {
-    color: colors.textSecondary,
-    fontWeight: typography.fontWeightSemiBold,
-  },
-  modalBtnPrimary: {
-    backgroundColor: colors.primary,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    borderRadius: 12,
-    minWidth: 100,
-    alignItems: 'center',
-  },
-  modalBtnPrimaryText: {
-    color: colors.textLight,
-    fontWeight: typography.fontWeightSemiBold,
-  },
 });
 
 export default HomeScreen;

@@ -63,7 +63,10 @@ const ProfileSetupScreen = ({ navigation }: any) => {
     }
 
     const trimmedEmail = email.trim();
-    if (!isValidEmail(trimmedEmail)) {
+    if (!trimmedEmail.includes('@')) {
+      setEmailError('Email address must include @');
+      valid = false;
+    } else if (!isValidEmail(trimmedEmail)) {
       setEmailError('Please enter a valid email address');
       valid = false;
     } else {
@@ -195,9 +198,11 @@ const ProfileSetupScreen = ({ navigation }: any) => {
 
   const normalizedName = normalizeDisplayName(displayName);
   const step1Ready = isValidDisplayName(normalizedName) && !nameError;
+  const trimmedEmailForStep = email.trim();
   const step2Ready =
     step1Ready &&
-    isValidEmail(email.trim()) &&
+    trimmedEmailForStep.includes('@') &&
+    isValidEmail(trimmedEmailForStep) &&
     !emailError;
 
   const handleBack = () => {

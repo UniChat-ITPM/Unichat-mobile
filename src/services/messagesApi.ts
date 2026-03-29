@@ -83,6 +83,10 @@ export async function fetchConversationMessages(
   return normalizeMessagesPage(data);
 }
 
+export async function markConversationViewed(conversationId: string): Promise<void> {
+  await apiClient.patch(`${BASE}/conversation/${conversationId}/viewed`);
+}
+
 export async function getUnreadCount(conversationId: string): Promise<number> {
   const { data } = await apiClient.get<unknown>(`${BASE}/unread-counts/${conversationId}`);
   if (typeof data === 'number') {

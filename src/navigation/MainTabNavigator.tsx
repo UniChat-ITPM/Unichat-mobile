@@ -15,6 +15,7 @@ import EditProfileScreen from '../screens/EditProfileScreen';
 import BottomTabBar, { HomeTabKey } from '../components/BottomTabBar';
 import { SCREENS } from '../constants';
 import { colors } from '../theme/colors';
+import { useChatsUnread } from '../context/ChatsUnreadContext';
 
 const Tab = createBottomTabNavigator();
 const SettingsStackNav = createStackNavigator();
@@ -70,10 +71,15 @@ const TAB_KEY_TO_ROUTE: Record<HomeTabKey, string> = {
 function UniChatTabBar({ state, navigation }: BottomTabBarProps) {
   const currentName = state.routes[state.index].name;
   const activeTab = ROUTE_TO_TAB_KEY[currentName] ?? 'chats';
+  const { chatsTabUnread, groupsTabUnread } = useChatsUnread();
 
   return (
     <BottomTabBar
       activeTab={activeTab}
+      badgeByTab={{
+        chats: chatsTabUnread,
+        groups: groupsTabUnread,
+      }}
       onTabPress={(tab) => {
         navigation.navigate(TAB_KEY_TO_ROUTE[tab]);
       }}

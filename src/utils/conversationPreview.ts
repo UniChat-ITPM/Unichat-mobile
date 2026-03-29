@@ -14,6 +14,12 @@ export type ChatPreviewRow = {
 
 const AVATAR_COLORS = ['#E0E7FF', '#F3E8FF', '#DBEAFE', '#E0F2FE', '#DCFCE7', '#FCE7F3'];
 
+/** Backend lists use Prisma `type` (`GROUP` | `DIRECT`); `isGroup` may be absent. */
+export function inferIsGroupFromConversationDto(c: ConversationSummaryDto): boolean {
+  if (c.isGroup === true) return true;
+  return String(c.type ?? '').toUpperCase() === 'GROUP';
+}
+
 function lastMessagePreview(c: ConversationSummaryDto): string {
   if (typeof c.lastMessage === 'string') {
     return c.lastMessage;
@@ -62,9 +68,10 @@ function resolvePreviewName(c: ConversationSummaryDto, currentUserId?: string | 
   if (peer) {
     return peer;
   }
+  const isGroup = inferIsGroupFromConversationDto(c);
   const isDirect =
-    c.type === 'DIRECT' ||
-    (!c.isGroup && Array.isArray(c.participants) && c.participants.length === 2);
+    String(c.type ?? '').toUpperCase() === 'DIRECT' ||
+    (!isGroup && !c.type && Array.isArray(c.participants) && c.participants.length === 2);
   if (isDirect && currentUserId && Array.isArray(c.participants)) {
     const other = c.participants.find((p) => p.userId !== currentUserId);
     const dn = other?.displayName?.trim();
@@ -98,7 +105,7 @@ export function conversationDtoToPreview(
     lastMessage: last || 'No messages yet',
     timeLabel: formatTimeLabel(timeSource) || '—',
     unreadCount: Math.max(0, c.unreadCount ?? 0),
-    isGroup: Boolean(c.isGroup),
+    isGroup: inferIsGroupFromConversationDto(c),
     isFavorite: Boolean(c.isFavorite),
     avatarColor: AVATAR_COLORS[index % AVATAR_COLORS.length],
   };

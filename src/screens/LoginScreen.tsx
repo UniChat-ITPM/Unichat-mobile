@@ -140,14 +140,16 @@ const LoginScreen = ({ navigation }: any) => {
 
   const combinedScale = Animated.multiply(logoScale, activeLogoScale);
 
+  const localDigits = phone.replace(/\D/g, '');
   const fullNumber = toE164(phone, DEFAULT_COUNTRY_CODE);
-  const isPhoneValid = phone.trim().length >= 7 && isValidE164(fullNumber);
+  const isPhoneValid =
+    localDigits.length === 9 && isValidE164(fullNumber);
 
   const handleSendOTP = async () => {
     setError('');
 
     if (!isPhoneValid) {
-      setError('Please enter a valid phone number.');
+      setError('Please enter your full 9-digit mobile number.');
       return;
     }
 
@@ -341,7 +343,7 @@ function LoginFormCardBody({
               if (error) setError('');
             }}
             keyboardType="phone-pad"
-            maxLength={10}
+            maxLength={14}
             style={styles.phoneInput}
             inputWrapperStyle={styles.phoneInputInner}
             errorText={error}
