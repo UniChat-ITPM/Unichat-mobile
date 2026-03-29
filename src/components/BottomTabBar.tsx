@@ -11,6 +11,8 @@ export type HomeTabKey = 'chats' | 'groups' | 'calls' | 'settings';
 interface BottomTabBarProps {
   activeTab: HomeTabKey;
   onTabPress: (tab: HomeTabKey) => void;
+  /** Unread / notification counts (current theme: `colors.primary` badge). */
+  badgeByTab?: Partial<Record<HomeTabKey, number>>;
 }
 
 const TAB_CONFIG: Array<{ key: HomeTabKey; label: string; icon: keyof typeof Ionicons.glyphMap }> =
@@ -21,12 +23,21 @@ const TAB_CONFIG: Array<{ key: HomeTabKey; label: string; icon: keyof typeof Ion
     { key: 'settings', label: 'Settings', icon: 'settings-outline' },
   ];
 
-const BottomTabBar = ({ activeTab, onTabPress }: BottomTabBarProps) => {
+function formatTabBadge(n: number): string {
+  if (n > 99) {
+    return '99+';
+  }
+  return String(n);
+}
+
+const BottomTabBar = ({ activeTab, onTabPress, badgeByTab }: BottomTabBarProps) => {
   const insets = useSafeAreaInsets();
   return (
     <View style={[styles.wrapper, { paddingBottom: spacing.base + insets.bottom }]}>
       {TAB_CONFIG.map((tab) => {
         const active = activeTab === tab.key;
+        const badgeRaw = badgeByTab?.[tab.key] ?? 0;
+        const badge = typeof badgeRaw === 'number' && badgeRaw > 0 ? badgeRaw : 0;
         return (
           <TouchableOpacity
             key={tab.key}
@@ -34,12 +45,19 @@ const BottomTabBar = ({ activeTab, onTabPress }: BottomTabBarProps) => {
             activeOpacity={0.85}
             onPress={() => onTabPress(tab.key)}
           >
-            <View style={[styles.iconBubble, active && styles.iconBubbleActive]}>
-              <Ionicons
-                name={tab.icon}
-                size={20}
-                color={active ? colors.textLight : colors.textSecondary}
-              />
+            <View style={styles.iconWrap}>
+              <View style={[styles.iconBubble, active && styles.iconBubbleActive]}>
+                <Ionicons
+                  name={tab.icon}
+                  size={20}
+                  color={active ? colors.textLight : colors.textSecondary}
+                />
+              </View>
+              {badge > 0 ? (
+                <View style={styles.tabBadge}>
+                  <Text style={styles.tabBadgeText}>{formatTabBadge(badge)}</Text>
+                </View>
+              ) : null}
             </View>
             <Text style={[styles.label, active && styles.labelActive]}>{tab.label}</Text>
           </TouchableOpacity>
@@ -63,6 +81,28 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     gap: spacing.xs,
+  },
+  iconWrap: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -10,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabBadgeText: {
+    color: colors.textLight,
+    fontSize: 10,
+    fontWeight: typography.fontWeightBold,
   },
   iconBubble: {
     width: 36,

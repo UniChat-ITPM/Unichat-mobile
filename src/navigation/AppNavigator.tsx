@@ -1,6 +1,6 @@
 import React from "react";
 import { ActivityIndicator, View, StyleSheet } from "react-native";
-import { createStackNavigator } from "@react-navigation/stack";
+import { createStackNavigator, type StackCardInterpolationProps } from "@react-navigation/stack";
 
 import Onboarding1Screen from "../screens/Onboarding1Screen";
 import Onboarding2Screen from "../screens/Onboarding2Screen";
@@ -10,12 +10,32 @@ import OTPScreen from "../screens/OTPScreen";
 import ProfileSetupScreen from "../screens/ProfileSetupScreen";
 import MainTabNavigator from './MainTabNavigator';
 import ChatScreen from '../screens/ChatScreen';
+import NewChatScreen from '../screens/NewChatScreen';
 import ParticipantProfileScreen from '../screens/ParticipantProfileScreen';
+import CallScreen from '../screens/CallScreen';
 import { SCREENS } from "../constants";
 import { useAuth } from "../context/AuthContext";
+import { ChatsUnreadProvider } from "../context/ChatsUnreadContext";
 import { colors } from "../theme/colors";
 
 const Stack = createStackNavigator();
+
+const stackScreenOptions = {
+  headerShown: false,
+  cardStyle: { backgroundColor: "#fff" },
+  cardStyleInterpolator: ({ current, layouts }: StackCardInterpolationProps) => ({
+    cardStyle: {
+      transform: [
+        {
+          translateX: current.progress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [layouts.screen.width, 0],
+          }),
+        },
+      ],
+    },
+  }),
+};
 
 const AppNavigator = () => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -28,54 +48,29 @@ const AppNavigator = () => {
     );
   }
 
+  if (!isAuthenticated) {
+    return (
+      <Stack.Navigator screenOptions={stackScreenOptions}>
+        <Stack.Screen name={SCREENS.ONBOARDING_1} component={Onboarding1Screen} />
+        <Stack.Screen name={SCREENS.ONBOARDING_2} component={Onboarding2Screen} />
+        <Stack.Screen name={SCREENS.ONBOARDING_3} component={Onboarding3Screen} />
+        <Stack.Screen name={SCREENS.LOGIN} component={LoginScreen} />
+        <Stack.Screen name={SCREENS.OTP} component={OTPScreen} />
+        <Stack.Screen name={SCREENS.PROFILE_SETUP} component={ProfileSetupScreen} />
+      </Stack.Navigator>
+    );
+  }
+
   return (
-    <Stack.Navigator
-      screenOptions={{
-        headerShown: false,
-        cardStyle: { backgroundColor: "#fff" },
-        cardStyleInterpolator: ({ current, layouts }) => ({
-          cardStyle: {
-            transform: [
-              {
-                translateX: current.progress.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [layouts.screen.width, 0],
-                }),
-              },
-            ],
-          },
-        }),
-      }}
-    >
-      {isAuthenticated ? (
-        <>
-          <Stack.Screen name={SCREENS.MAIN} component={MainTabNavigator} />
-          <Stack.Screen name={SCREENS.CHAT} component={ChatScreen} />
-          <Stack.Screen name={SCREENS.PARTICIPANT_PROFILE} component={ParticipantProfileScreen} />
-        </>
-      ) : (
-        <>
-          <Stack.Screen
-            name={SCREENS.ONBOARDING_1}
-            component={Onboarding1Screen}
-          />
-          <Stack.Screen
-            name={SCREENS.ONBOARDING_2}
-            component={Onboarding2Screen}
-          />
-          <Stack.Screen
-            name={SCREENS.ONBOARDING_3}
-            component={Onboarding3Screen}
-          />
-          <Stack.Screen name={SCREENS.LOGIN} component={LoginScreen} />
-          <Stack.Screen name={SCREENS.OTP} component={OTPScreen} />
-          <Stack.Screen
-            name={SCREENS.PROFILE_SETUP}
-            component={ProfileSetupScreen}
-          />
-        </>
-      )}
-    </Stack.Navigator>
+    <ChatsUnreadProvider>
+      <Stack.Navigator screenOptions={stackScreenOptions}>
+        <Stack.Screen name={SCREENS.MAIN} component={MainTabNavigator} />
+        <Stack.Screen name={SCREENS.CHAT} component={ChatScreen} />
+        <Stack.Screen name={SCREENS.NEW_CHAT} component={NewChatScreen} />
+        <Stack.Screen name={SCREENS.PARTICIPANT_PROFILE} component={ParticipantProfileScreen} />
+        <Stack.Screen name={SCREENS.CALL} component={CallScreen} />
+      </Stack.Navigator>
+    </ChatsUnreadProvider>
   );
 };
 

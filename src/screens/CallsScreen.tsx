@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useCallback } from "react";
 import { Alert, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import CallsMainView, { CallLogEntry } from "../components/calls/CallsMainView";
+import { SCREENS } from "../constants";
 import { colors } from "../theme/colors";
 
 const DEMO_RECENT: CallLogEntry[] = [
@@ -48,9 +49,25 @@ const DEMO_RECENT: CallLogEntry[] = [
 const CallsScreen = ({
   navigation,
 }: {
-  navigation: { goBack: () => void; canGoBack: () => boolean };
+  navigation: {
+    goBack: () => void;
+    canGoBack: () => boolean;
+    navigate: (name: string, params?: object) => void;
+  };
 }) => {
   const showBack = navigation.canGoBack();
+
+  const openDemoCall = useCallback(
+    (entry: CallLogEntry) => {
+      navigation.navigate(SCREENS.CALL, {
+        mode: entry.isVideo ? "video" : "voice",
+        peerName: entry.name,
+        avatarColor: entry.avatarColor,
+      });
+    },
+    [navigation],
+  );
+
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <CallsMainView
@@ -70,24 +87,35 @@ const CallsScreen = ({
         onNewCall={() =>
           Alert.alert("New call", "Pick a contact to call (demo).")
         }
-        onQuickAction={(key) =>
+        onQuickAction={(key) => {
+          if (key === "call") {
+            navigation.navigate(SCREENS.CALL, {
+              mode: "voice",
+              peerName: "Chuty",
+              avatarColor: "#FBCFE8",
+            });
+            return;
+          }
           Alert.alert(
             "Quick action",
-            key === "call"
-              ? "Start a voice call (demo)."
-              : key === "schedule"
-                ? "Schedule a call (demo)."
-                : key === "keypad"
-                  ? "Open dial pad (demo)."
-                  : "Favorite contacts (demo).",
-          )
-        }
+            key === "schedule"
+              ? "Schedule a call (demo)."
+              : key === "keypad"
+                ? "Open dial pad (demo)."
+                : "Favorite contacts (demo).",
+          );
+        }}
         onShortcutContact={() =>
-          Alert.alert("Chuty", "Open shortcut contact (demo).")
+          navigation.navigate(SCREENS.CALL, {
+            mode: "voice",
+            peerName: "Chuty",
+            avatarColor: "#FBCFE8",
+          })
         }
         onCallInfo={(entry) =>
           Alert.alert(entry.name, "View call history details (demo).")
         }
+        onCallLogPress={openDemoCall}
       />
     </SafeAreaView>
   );

@@ -28,5 +28,9 @@ export const SCREENS = {
   TAB_SETTINGS: 'SettingsTab',
   HOME: 'Main',
   CHAT: 'Chat',
+  /** Full-screen picker: contacts on UniChat, new group, chat by user id */
+  NEW_CHAT: 'NewChat',
   PARTICIPANT_PROFILE: 'ParticipantProfile',
+  /** Demo voice/video full-screen call UI */
+  CALL: 'Call',
 };

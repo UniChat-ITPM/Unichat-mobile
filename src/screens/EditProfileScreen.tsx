@@ -26,6 +26,8 @@ import { getProfileImageUrl } from '../utils/avatar';
 import { toBase64DataUri } from '../utils/image';
 import {
   isValidUsername,
+  isValidDisplayName,
+  normalizeDisplayName,
   isValidEmail,
   validateProfileImage,
 } from '../utils/validators';
@@ -48,14 +50,16 @@ const EditProfileScreen = ({ navigation }: any) => {
 
   const hasChanges = useMemo(() => {
     if (selectedImage) return true;
-    if (displayName.trim() !== (user?.displayName ?? '')) return true;
+    const userNormName = normalizeDisplayName(user?.displayName ?? '');
+    if (normalizeDisplayName(displayName) !== userNormName) return true;
     if (username.trim() !== (user?.username ?? '')) return true;
     if (email.trim() !== (user?.email ?? '')) return true;
     return false;
   }, [displayName, username, email, selectedImage, user]);
 
+  const normalizedDisplayName = normalizeDisplayName(displayName);
   const isFormValid =
-    displayName.trim().length >= 3 &&
+    isValidDisplayName(normalizedDisplayName) &&
     email.trim().length > 0 &&
     !nameError &&
     !usernameError &&
@@ -64,8 +68,10 @@ const EditProfileScreen = ({ navigation }: any) => {
   const validateForm = (): boolean => {
     let valid = true;
 
-    if (!isValidUsername(displayName.trim())) {
-      setNameError('3–50 characters: letters, numbers, and underscore only');
+    if (!isValidDisplayName(normalizedDisplayName)) {
+      setNameError(
+        '3–50 characters: letters, numbers, underscores, and spaces between names',
+      );
       valid = false;
     } else {
       setNameError('');
@@ -142,8 +148,9 @@ const EditProfileScreen = ({ navigation }: any) => {
     try {
       const payload: UpdateUserPayload = {};
 
-      if (displayName.trim() !== (user.displayName ?? '')) {
-        payload.displayName = displayName.trim();
+      const nextDisplayName = normalizeDisplayName(displayName);
+      if (nextDisplayName !== normalizeDisplayName(user.displayName ?? '')) {
+        payload.displayName = nextDisplayName;
       }
       if (username.trim() !== (user.username ?? '')) {
         payload.username = username.trim();
@@ -282,13 +289,13 @@ const EditProfileScreen = ({ navigation }: any) => {
           <View style={styles.card}>
             <TextInputField
               label="Display Name"
-              placeholder="Enter your display name"
+              placeholder="e.g. Dumindu Dissanayake"
               value={displayName}
               onChangeText={(text: string) => {
                 setDisplayName(text);
                 if (nameError) setNameError('');
               }}
-              autoCapitalize="none"
+              autoCapitalize="words"
               maxLength={50}
               editable={!loading}
               errorText={nameError}
