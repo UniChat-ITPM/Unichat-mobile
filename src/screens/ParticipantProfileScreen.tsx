@@ -9,6 +9,8 @@ export type ParticipantProfileScreenParams = {
   participantName: string;
   subtitle?: string;
   mediaCount?: number;
+  conversationId?: string;
+  isGroup?: boolean;
 };
 
 const ParticipantProfileScreen = ({
@@ -22,7 +24,7 @@ const ParticipantProfileScreen = ({
   route: { params?: ParticipantProfileScreenParams };
 }) => {
   const params = route.params ?? { participantName: 'Chat' };
-  const { participantName, subtitle, mediaCount = 0 } = params;
+  const { participantName, subtitle, mediaCount = 0, conversationId, isGroup } = params as ParticipantProfileScreenParams;
 
   const onMediaLinksDocs = useCallback(() => {
     Alert.alert('Media, links, and docs', 'Shared files for this chat will appear here soon.');
@@ -84,8 +86,12 @@ const ParticipantProfileScreen = ({
   }, []);
 
   const onEdit = useCallback(() => {
-    Alert.alert('Edit', 'Editing contact details will be available soon.');
-  }, []);
+    if (isGroup && conversationId) {
+      navigation.navigate(SCREENS.EDIT_GROUP, { conversationId, currentTitle: participantName });
+    } else {
+      Alert.alert('Edit', 'Editing contact details will be available soon.');
+    }
+  }, [isGroup, conversationId, navigation, participantName]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.backgroundSecondary }} edges={['top']}>

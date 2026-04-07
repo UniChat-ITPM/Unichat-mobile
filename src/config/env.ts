@@ -9,32 +9,83 @@ interface EnvConfig {
   REQUEST_TIMEOUT: number;
 }
 
+type ManifestExtra = {
+  apiBaseUrl?: string;
+  realtimeBaseUrl?: string;
+  /** Your PC's LAN IPv4 (e.g. from `ipconfig`) when tunnel / localhost breaks auto-detection. */
+  devLanHost?: string;
+  releaseChannel?: string;
+};
+
+function getManifestExtra(): ManifestExtra | undefined {
+  return (Constants.expoConfig?.extra ?? Constants.manifest?.extra) as ManifestExtra | undefined;
+}
+
 /**
- * In dev mode, Expo's debuggerHost gives us the LAN IP of the machine
- * running the bundler (e.g. "192.168.8.187:8081"). We extract just the IP
- * so the physical device can reach the backend over the local network.
+ * Expo `hostUri` / `debuggerHost` is where the **Metro bundler** is reached.
+ * With `--tunnel`, that is `*.exp.direct` — not your machine, so `http://that:4225` never reaches the API.
+ * `localhost` / `127.0.0.1` is the device itself on a physical phone.
  */
-function getDevApiUrl(): string {
+function extractReachableDevHost(): string | null {
   const debuggerHost =
     Constants.expoConfig?.hostUri ?? Constants.manifest?.debuggerHost;
+  if (!debuggerHost) return null;
 
-  if (debuggerHost) {
-    const ip = debuggerHost.split(':')[0]; // strip the port
-    return `http://${ip}:4225/api`;
+  const host = debuggerHost.split(':')[0].trim();
+  if (!host) return null;
+
+  const lower = host.toLowerCase();
+  if (lower === 'localhost' || lower === '127.0.0.1') return null;
+  if (lower.endsWith('.exp.direct')) return null;
+  if (lower.includes('ngrok') || lower.endsWith('.ngrok.io') || lower.endsWith('.ngrok-free.app')) {
+    return null;
   }
 
-  // Fallback — only works on emulator / same machine
+  return host;
+}
+
+/**
+ * In dev mode, prefer a real LAN hostname for the API (same as Metro when using `--lan`).
+ * Otherwise use `expo.extra.devLanHost`, then localhost (emulator / same machine only).
+ */
+function getDevApiUrl(): string {
+  const ex = getManifestExtra();
+  const lanHost = extractReachableDevHost();
+  if (lanHost) {
+    return `http://${lanHost}:4225/api`;
+  }
+
+  const manual = ex?.devLanHost?.trim();
+  if (manual) {
+    return `http://${manual}:4225/api`;
+  }
+
+  if (__DEV__) {
+    const raw =
+      Constants.expoConfig?.hostUri ?? Constants.manifest?.debuggerHost ?? '';
+    console.warn(
+      '[env] API host: Metro is at',
+      raw || '(unknown)',
+      '— that address cannot reach your backend on a device when using tunnel or localhost.',
+      'Set expo.extra.devLanHost in app.json to your PC IPv4 (same Wi‑Fi), e.g. "192.168.8.192".',
+    );
+  }
+
   return 'http://localhost:4225/api';
 }
 
 function getDevRealtimeUrl(): string {
-  const debuggerHost =
-    Constants.expoConfig?.hostUri ?? Constants.manifest?.debuggerHost;
-
-  if (debuggerHost) {
-    const ip = debuggerHost.split(':')[0];
-    return `http://${ip}:8228`;
+  const ex = getManifestExtra();
+  const lanHost = extractReachableDevHost();
+  if (lanHost) {
+    return `http://${lanHost}:8228`;
   }
+
+  const manual = ex?.devLanHost?.trim();
+  if (manual) {
+    return `http://${manual}:8228`;
+  }
+
   return 'http://localhost:8228';
 }
 
@@ -42,7 +93,8 @@ const ENV_CONFIGS: Record<Environment, EnvConfig> = {
   development: {
     API_BASE_URL: getDevApiUrl(),
     REALTIME_BASE_URL: getDevRealtimeUrl(),
-    REQUEST_TIMEOUT: 15_000,
+    // Local stack (gateway → otp → WhatsApp / auth / RabbitMQ) often needs >15s on first call.
+    REQUEST_TIMEOUT: 60_000,
   },
   staging: {
     API_BASE_URL: 'https://staging-api.unichat.app/api',
@@ -67,9 +119,7 @@ function getCurrentEnvironment(): Environment {
 export const ENV = ENV_CONFIGS[getCurrentEnvironment()];
 
 /** Optional overrides from `app.config` / `app.json` → `expo.extra`. */
-const extra = (Constants.expoConfig?.extra ?? Constants.manifest?.extra) as
-  | { apiBaseUrl?: string; realtimeBaseUrl?: string }
-  | undefined;
+const extra = getManifestExtra();
 
 /**
  * Axios `baseURL` must end with exactly one `/api` (paths are `/auth/...`, `/conversations/...`).
