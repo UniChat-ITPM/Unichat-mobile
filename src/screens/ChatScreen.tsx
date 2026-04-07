@@ -50,6 +50,8 @@ import { mapUnknownMessagePayload, type MessageMapContext } from '../utils/messa
 import { prepareChatImageForUpload } from '../utils/prepareChatImage';
 import { ChatImageViewer, formatChatImageViewerDate } from '../components/chat/ChatImageViewer';
 import { SCREENS } from '../constants';
+import { getConversation } from '../services/conversationsApi';
+import { resolveConversationAvatarUrl } from '../utils/conversationPreview';
 
 export type ChatScreenParams = {
   name: string;
@@ -58,6 +60,7 @@ export type ChatScreenParams = {
   status?: string;
   unreadBackHrefCount?: number;
   isGroup?: boolean;
+  imageUrl?: string | null;
 };
 
 type Quote = {
@@ -264,11 +267,48 @@ const chatSkeletonStyles = StyleSheet.create({
 
 const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
   const params = route.params as ChatScreenParams | undefined;
-  const title = params?.name ?? 'Chat';
+  const paramTitle = params?.name ?? 'Chat';
+  const paramImageUrl = params?.imageUrl ?? null;
   const conversationId = params?.conversationId;
   const statusLine = params?.status ?? 'last seen today at 12:56';
   const backUnread = params?.unreadBackHrefCount;
   const { user } = useAuth();
+
+  const [threadTitle, setThreadTitle] = useState(paramTitle);
+  const [threadImageUrl, setThreadImageUrl] = useState<string | null>(paramImageUrl);
+
+  useEffect(() => {
+    setThreadTitle(paramTitle);
+    setThreadImageUrl(paramImageUrl);
+  }, [paramTitle, paramImageUrl]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!conversationId) {
+        return undefined;
+      }
+      let cancelled = false;
+      (async () => {
+        try {
+          const c = await getConversation(conversationId);
+          if (cancelled) return;
+          const name = String(c.title ?? c.name ?? '').trim();
+          if (name) {
+            setThreadTitle(name);
+          }
+          setThreadImageUrl(resolveConversationAvatarUrl(c, user?.id));
+        } catch {
+          /* keep header from route / last good fetch */
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [conversationId, user?.id]),
+  );
+
+  const title = threadTitle;
+  const headerPeerImageUrl = threadImageUrl;
 
   const messageMapContext = useMemo<MessageMapContext>(
     () => ({ peerDisplayName: title }),
@@ -528,8 +568,17 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
       mediaCount: mediaLinksDocsCount,
       conversationId: conversationId,
       isGroup: params?.isGroup,
+      imageUrl: headerPeerImageUrl,
     });
-  }, [navigation, title, statusLine, mediaLinksDocsCount, conversationId, params?.isGroup]);
+  }, [
+    navigation,
+    title,
+    statusLine,
+    mediaLinksDocsCount,
+    conversationId,
+    params?.isGroup,
+    headerPeerImageUrl,
+  ]);
 
   const inputRef = useRef<TextInput>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
@@ -1431,7 +1480,15 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
 
             <View style={styles.headerCenter}>
               <View style={styles.headerAvatar}>
-                <Text style={styles.headerAvatarLetter}>{title.trim().charAt(0).toUpperCase() || 'C'}</Text>
+                {headerPeerImageUrl?.trim() ? (
+                  <Image
+                    source={{ uri: headerPeerImageUrl.trim() }}
+                    style={styles.headerAvatarImage}
+                    accessibilityIgnoresInvertColors
+                  />
+                ) : (
+                  <Text style={styles.headerAvatarLetter}>{title.trim().charAt(0).toUpperCase() || 'C'}</Text>
+                )}
               </View>
               <Pressable
                 onPress={openParticipantProfile}
@@ -1827,6 +1884,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.sm,
+    overflow: 'hidden',
+  },
+  headerAvatarImage: {
+    width: '100%',
+    height: '100%',
   },
   headerAvatarLetter: {
     fontSize: typography.fontSizeLG,

@@ -18,6 +18,8 @@ export interface ConversationSummaryDto {
     profilePhoto?: string | null;
   }> | null;
   isFavorite?: boolean | null;
+  /** Group / conversation avatar when set by API */
+  imageUrl?: string | null;
   /** Last message preview text */
   lastMessageText?: string | null;
   lastMessage?: { text?: string; body?: string; content?: string } | string | null;

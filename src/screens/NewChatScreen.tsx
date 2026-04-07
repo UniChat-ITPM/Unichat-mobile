@@ -180,6 +180,7 @@ const NewChatScreen = ({
           conversationId: conv.id,
           status: 'Tap for info',
           isGroup: inferIsGroupFromConversationDto(conv),
+          imageUrl: conv.imageUrl ?? null,
         });
       } catch (e) {
         Alert.alert('Could not start chat', conversationsErrorMessage(e));
@@ -248,6 +249,7 @@ const NewChatScreen = ({
         conversationId: conv.id,
         status: 'Tap for info',
         isGroup: true,
+        imageUrl: conv.imageUrl ?? null,
       });
     } catch (e) {
       Alert.alert('Could not create group', conversationsErrorMessage(e));

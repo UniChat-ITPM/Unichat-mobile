@@ -12,7 +12,7 @@ interface EnvConfig {
 type ManifestExtra = {
   apiBaseUrl?: string;
   realtimeBaseUrl?: string;
-  /** Your PC's LAN IPv4 (e.g. from `ipconfig`) when tunnel / localhost breaks auto-detection. */
+  /** PC LAN IPv4 for physical devices when Metro uses a tunnel URL (`*.exp.direct`, ngrok). Not used when Metro is `localhost` (simulator / same machine). */
   devLanHost?: string;
   releaseChannel?: string;
 };
@@ -44,49 +44,72 @@ function extractReachableDevHost(): string | null {
   return host;
 }
 
+function getMetroDevHostname(): string {
+  const raw = Constants.expoConfig?.hostUri ?? Constants.manifest?.debuggerHost ?? '';
+  return raw.split(':')[0].trim();
+}
+
+function isTunnelMetroHost(hostLower: string): boolean {
+  return (
+    hostLower.endsWith('.exp.direct') ||
+    hostLower.includes('ngrok') ||
+    hostLower.endsWith('.ngrok.io') ||
+    hostLower.endsWith('.ngrok-free.app')
+  );
+}
+
 /**
- * In dev mode, prefer a real LAN hostname for the API (same as Metro when using `--lan`).
- * Otherwise use `expo.extra.devLanHost`, then localhost (emulator / same machine only).
+ * Host for local HTTP API and Socket.IO in dev (no port).
+ * Matches `staging_v1` when Metro is LAN or localhost; uses `devLanHost` only for tunnel/proxy Metro hosts.
  */
-function getDevApiUrl(): string {
+function resolveDevBackendHost(): string {
   const ex = getManifestExtra();
+  const manual = ex?.devLanHost?.trim();
+  const metro = getMetroDevHostname();
+  const lower = metro.toLowerCase();
+
   const lanHost = extractReachableDevHost();
   if (lanHost) {
-    return `http://${lanHost}:4225/api`;
+    return lanHost;
   }
 
-  const manual = ex?.devLanHost?.trim();
+  // Simulator / same machine: staging_v1 used Metro's localhost here — do not override with devLanHost.
+  if (!metro || lower === 'localhost' || lower === '127.0.0.1') {
+    return 'localhost';
+  }
+
+  if (isTunnelMetroHost(lower)) {
+    if (manual) {
+      return manual;
+    }
+    if (__DEV__) {
+      console.warn(
+        '[env] Metro is on a tunnel/proxy host (',
+        metro,
+        ') — set expo.extra.devLanHost in app.json to your PC IPv4 (same Wi‑Fi) so the phone can reach :4225 and :8228.',
+      );
+    }
+    return 'localhost';
+  }
+
   if (manual) {
-    return `http://${manual}:4225/api`;
+    return manual;
   }
 
   if (__DEV__) {
-    const raw =
-      Constants.expoConfig?.hostUri ?? Constants.manifest?.debuggerHost ?? '';
-    console.warn(
-      '[env] API host: Metro is at',
-      raw || '(unknown)',
-      '— that address cannot reach your backend on a device when using tunnel or localhost.',
-      'Set expo.extra.devLanHost in app.json to your PC IPv4 (same Wi‑Fi), e.g. "192.168.8.192".',
-    );
+    console.warn('[env] Could not infer backend host from Metro; using localhost.');
   }
+  return 'localhost';
+}
 
-  return 'http://localhost:4225/api';
+function getDevApiUrl(): string {
+  const h = resolveDevBackendHost();
+  return `http://${h}:4225/api`;
 }
 
 function getDevRealtimeUrl(): string {
-  const ex = getManifestExtra();
-  const lanHost = extractReachableDevHost();
-  if (lanHost) {
-    return `http://${lanHost}:8228`;
-  }
-
-  const manual = ex?.devLanHost?.trim();
-  if (manual) {
-    return `http://${manual}:8228`;
-  }
-
-  return 'http://localhost:8228';
+  const h = resolveDevBackendHost();
+  return `http://${h}:8228`;
 }
 
 const ENV_CONFIGS: Record<Environment, EnvConfig> = {

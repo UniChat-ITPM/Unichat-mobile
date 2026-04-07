@@ -107,12 +107,20 @@ export async function leaveConversationRequest(conversationId: string): Promise<
   return data;
 }
 
+export type PatchConversationSettingsResponse = {
+  success?: boolean;
+  conversation?: ConversationDetailDto;
+};
+
 export async function patchConversationSettings(
   conversationId: string,
   body: PatchConversationSettingsBody,
-): Promise<unknown> {
-  const { data } = await apiClient.patch(`${BASE}/${conversationId}/settings`, body);
-  return data;
+): Promise<PatchConversationSettingsResponse> {
+  const { data } = await apiClient.patch<PatchConversationSettingsResponse>(
+    `${BASE}/${conversationId}/settings`,
+    body,
+  );
+  return data ?? {};
 }
 
 export async function muteConversation(
