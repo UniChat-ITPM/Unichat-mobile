@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
@@ -12,6 +12,8 @@ interface ChatListItemProps {
   unreadCount?: number;
   isOnline?: boolean;
   avatarColor?: string;
+  /** Remote URL for group / thread avatar when API provides one */
+  imageUrl?: string | null;
   onPress?: () => void;
 }
 
@@ -22,16 +24,22 @@ const ChatListItem = ({
   unreadCount = 0,
   isOnline = false,
   avatarColor = '#EEF2FF',
+  imageUrl,
   onPress,
 }: ChatListItemProps) => {
   const initial = name.trim().charAt(0).toUpperCase() || 'U';
   const hasUnread = unreadCount > 0;
+  const remote = imageUrl?.trim();
 
   return (
     <TouchableOpacity style={styles.card} activeOpacity={0.9} onPress={onPress}>
       <View style={styles.left}>
         <View style={[styles.avatar, { backgroundColor: avatarColor }]}>
-          <Text style={styles.avatarLabel}>{initial}</Text>
+          {remote ? (
+            <Image source={{ uri: remote }} style={styles.avatarImage} accessibilityIgnoresInvertColors />
+          ) : (
+            <Text style={styles.avatarLabel}>{initial}</Text>
+          )}
           {isOnline ? <View style={styles.onlineDot} /> : null}
         </View>
       </View>
@@ -91,6 +99,12 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
   },
   avatarLabel: {
     color: colors.primaryDark,

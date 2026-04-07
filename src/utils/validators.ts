@@ -52,7 +52,9 @@ export function isValidEmail(email: string): boolean {
 }
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_PROFILE_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+/** Group avatars (create / edit); matches conversation-service body + Cloudinary limits */
+export const MAX_GROUP_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
 
 /**
  * Validate a profile image by MIME type and file size.
@@ -61,12 +63,14 @@ const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 export function validateProfileImage(
   mimeType: string,
   fileSize: number,
+  maxSizeBytes: number = MAX_PROFILE_IMAGE_SIZE_BYTES,
 ): string | null {
   if (!ALLOWED_IMAGE_TYPES.includes(mimeType)) {
     return 'Please select a JPEG, PNG, WebP, or GIF image.';
   }
-  if (fileSize > MAX_IMAGE_SIZE_BYTES) {
-    return 'Image must be 5 MB or smaller.';
+  if (fileSize > maxSizeBytes) {
+    const mb = maxSizeBytes / (1024 * 1024);
+    return `Image must be ${mb} MB or smaller.`;
   }
   return null;
 }

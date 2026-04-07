@@ -12,6 +12,7 @@ import MainTabNavigator from './MainTabNavigator';
 import ChatScreen from '../screens/ChatScreen';
 import NewChatScreen from '../screens/NewChatScreen';
 import ParticipantProfileScreen from '../screens/ParticipantProfileScreen';
+import EditGroupScreen from '../screens/EditGroupScreen';
 import CallScreen from '../screens/CallScreen';
 import { SCREENS } from "../constants";
 import { useAuth } from "../context/AuthContext";
@@ -68,6 +69,7 @@ const AppNavigator = () => {
         <Stack.Screen name={SCREENS.CHAT} component={ChatScreen} />
         <Stack.Screen name={SCREENS.NEW_CHAT} component={NewChatScreen} />
         <Stack.Screen name={SCREENS.PARTICIPANT_PROFILE} component={ParticipantProfileScreen} />
+        <Stack.Screen name={SCREENS.EDIT_GROUP} component={EditGroupScreen} />
         <Stack.Screen name={SCREENS.CALL} component={CallScreen} />
       </Stack.Navigator>
     </ChatsUnreadProvider>

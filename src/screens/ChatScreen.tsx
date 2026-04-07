@@ -50,6 +50,8 @@ import { mapUnknownMessagePayload, type MessageMapContext } from '../utils/messa
 import { prepareChatImageForUpload } from '../utils/prepareChatImage';
 import { ChatImageViewer, formatChatImageViewerDate } from '../components/chat/ChatImageViewer';
 import { SCREENS } from '../constants';
+import { getConversation } from '../services/conversationsApi';
+import { resolveConversationAvatarUrl } from '../utils/conversationPreview';
 
 export type ChatScreenParams = {
   name: string;
@@ -58,6 +60,7 @@ export type ChatScreenParams = {
   status?: string;
   unreadBackHrefCount?: number;
   isGroup?: boolean;
+  imageUrl?: string | null;
 };
 
 type Quote = {
@@ -264,11 +267,48 @@ const chatSkeletonStyles = StyleSheet.create({
 
 const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
   const params = route.params as ChatScreenParams | undefined;
-  const title = params?.name ?? 'Chat';
+  const paramTitle = params?.name ?? 'Chat';
+  const paramImageUrl = params?.imageUrl ?? null;
   const conversationId = params?.conversationId;
   const statusLine = params?.status ?? 'last seen today at 12:56';
   const backUnread = params?.unreadBackHrefCount;
   const { user } = useAuth();
+
+  const [threadTitle, setThreadTitle] = useState(paramTitle);
+  const [threadImageUrl, setThreadImageUrl] = useState<string | null>(paramImageUrl);
+
+  useEffect(() => {
+    setThreadTitle(paramTitle);
+    setThreadImageUrl(paramImageUrl);
+  }, [paramTitle, paramImageUrl]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!conversationId) {
+        return undefined;
+      }
+      let cancelled = false;
+      (async () => {
+        try {
+          const c = await getConversation(conversationId);
+          if (cancelled) return;
+          const name = String(c.title ?? c.name ?? '').trim();
+          if (name) {
+            setThreadTitle(name);
+          }
+          setThreadImageUrl(resolveConversationAvatarUrl(c, user?.id));
+        } catch {
+          /* keep header from route / last good fetch */
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [conversationId, user?.id]),
+  );
+
+  const title = threadTitle;
+  const headerPeerImageUrl = threadImageUrl;
 
   const messageMapContext = useMemo<MessageMapContext>(
     () => ({ peerDisplayName: title }),
@@ -338,7 +378,7 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
           requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
         }
         // Thread is open: keep inbox unread at 0 for this chat (server still increments for active viewers).
-        void markConversationViewed(conversationId).catch(() => {});
+        void markConversationViewed(conversationId).catch(() => { });
         return;
       }
       if (t === 'MESSAGE_EDITED') {
@@ -526,8 +566,19 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
       participantName: title,
       subtitle: statusLine,
       mediaCount: mediaLinksDocsCount,
+      conversationId: conversationId,
+      isGroup: params?.isGroup,
+      imageUrl: headerPeerImageUrl,
     });
-  }, [navigation, title, statusLine, mediaLinksDocsCount]);
+  }, [
+    navigation,
+    title,
+    statusLine,
+    mediaLinksDocsCount,
+    conversationId,
+    params?.isGroup,
+    headerPeerImageUrl,
+  ]);
 
   const inputRef = useRef<TextInput>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
@@ -783,11 +834,11 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
       const reply = replyTarget;
       const quote: Quote | undefined = reply
         ? {
-            author: reply.isMine ? 'You' : title,
-            snippet:
-              reply.body.length > 72 ? `${reply.body.slice(0, 69)}…` : reply.body || '…',
-            accent: reply.isMine ? colors.secondary : colors.primary,
-          }
+          author: reply.isMine ? 'You' : title,
+          snippet:
+            reply.body.length > 72 ? `${reply.body.slice(0, 69)}…` : reply.body || '…',
+          accent: reply.isMine ? colors.secondary : colors.primary,
+        }
         : undefined;
       const replyId =
         reply && !String(reply.id).startsWith('local-') && !String(reply.id).startsWith('pending-')
@@ -809,10 +860,10 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
           : {}),
         ...(opts.docMeta
           ? {
-              docName: opts.docMeta.docName,
-              docMimeType: opts.docMeta.docMimeType,
-              docSizeBytes: opts.docMeta.docSizeBytes,
-            }
+            docName: opts.docMeta.docName,
+            docMimeType: opts.docMeta.docMimeType,
+            docSizeBytes: opts.docMeta.docSizeBytes,
+          }
           : {}),
         ...(quote ? { quote } : {}),
       };
@@ -1040,10 +1091,10 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
     const reply = replyTarget;
     const quote: Quote | undefined = reply
       ? {
-          author: reply.isMine ? 'You' : title,
-          snippet: reply.body.length > 72 ? `${reply.body.slice(0, 69)}…` : reply.body,
-          accent: reply.isMine ? colors.secondary : colors.primary,
-        }
+        author: reply.isMine ? 'You' : title,
+        snippet: reply.body.length > 72 ? `${reply.body.slice(0, 69)}…` : reply.body,
+        accent: reply.isMine ? colors.secondary : colors.primary,
+      }
       : undefined;
 
     if (conversationId && user?.id) {
@@ -1306,11 +1357,11 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
 
   const menuRich = menuMessage
     ? Boolean(
-        menuMessage.imageUri ||
-          menuMessage.voiceUri ||
-          menuMessage.docName ||
-          menuMessage.contactName,
-      )
+      menuMessage.imageUri ||
+      menuMessage.voiceUri ||
+      menuMessage.docName ||
+      menuMessage.contactName,
+    )
     : false;
 
   const menuIsImage = menuMessage ? Boolean(menuMessage.imageUri) : false;
@@ -1409,256 +1460,264 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
   return (
     <>
       <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-      >
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.headerLeft}
-            onPress={() => navigation.goBack()}
-            activeOpacity={0.85}
-            hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
-          >
-            <Ionicons name="chevron-back" size={26} color={colors.primary} />
-            {typeof backUnread === 'number' && backUnread > 0 ? (
-              <Text style={styles.backUnread}>{backUnread > 99 ? '99+' : backUnread}</Text>
-            ) : null}
-          </TouchableOpacity>
-
-          <View style={styles.headerCenter}>
-            <View style={styles.headerAvatar}>
-              <Text style={styles.headerAvatarLetter}>{title.trim().charAt(0).toUpperCase() || 'C'}</Text>
-            </View>
-            <Pressable
-              onPress={openParticipantProfile}
-              style={({ pressed }) => [styles.headerTitlesPressable, pressed && styles.headerTitlesPressed]}
-              android_ripple={{ color: 'rgba(79, 70, 229, 0.12)' }}
-              accessibilityRole="button"
-              accessibilityLabel={`${title} contact info`}
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        >
+          <View style={styles.header}>
+            <TouchableOpacity
+              style={styles.headerLeft}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.85}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
             >
-              <View style={styles.headerTitles}>
-                <Text style={styles.headerName} numberOfLines={1}>
-                  {title}
+              <Ionicons name="chevron-back" size={26} color={colors.primary} />
+              {typeof backUnread === 'number' && backUnread > 0 ? (
+                <Text style={styles.backUnread}>{backUnread > 99 ? '99+' : backUnread}</Text>
+              ) : null}
+            </TouchableOpacity>
+
+            <View style={styles.headerCenter}>
+              <View style={styles.headerAvatar}>
+                {headerPeerImageUrl?.trim() ? (
+                  <Image
+                    source={{ uri: headerPeerImageUrl.trim() }}
+                    style={styles.headerAvatarImage}
+                    accessibilityIgnoresInvertColors
+                  />
+                ) : (
+                  <Text style={styles.headerAvatarLetter}>{title.trim().charAt(0).toUpperCase() || 'C'}</Text>
+                )}
+              </View>
+              <Pressable
+                onPress={openParticipantProfile}
+                style={({ pressed }) => [styles.headerTitlesPressable, pressed && styles.headerTitlesPressed]}
+                android_ripple={{ color: 'rgba(79, 70, 229, 0.12)' }}
+                accessibilityRole="button"
+                accessibilityLabel={`${title} contact info`}
+              >
+                <View style={styles.headerTitles}>
+                  <Text style={styles.headerName} numberOfLines={1}>
+                    {title}
+                  </Text>
+                  <Text style={styles.headerStatus} numberOfLines={1}>
+                    {statusLine}
+                  </Text>
+                </View>
+              </Pressable>
+            </View>
+
+            <View style={styles.headerRight}>
+              <TouchableOpacity
+                style={styles.headerIconBtn}
+                activeOpacity={0.85}
+                onPress={() =>
+                  navigation.navigate(SCREENS.CALL, {
+                    mode: 'video',
+                    peerName: title,
+                    avatarColor: colors.dotInactive,
+                  })
+                }
+                accessibilityLabel="Video call demo"
+              >
+                <Ionicons name="videocam-outline" size={22} color={colors.textPrimary} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.headerIconBtn}
+                activeOpacity={0.85}
+                onPress={() =>
+                  navigation.navigate(SCREENS.CALL, {
+                    mode: 'voice',
+                    peerName: title,
+                    avatarColor: colors.dotInactive,
+                  })
+                }
+                accessibilityLabel="Voice call demo"
+              >
+                <Ionicons name="call-outline" size={20} color={colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.chatSurface}>
+            {historyLoading && messages.length === 0 ? (
+              <ChatHistorySkeleton />
+            ) : (
+              <FlatList
+                ref={listRef}
+                data={messages}
+                keyExtractor={(m) => m.id}
+                renderItem={renderMessage}
+                contentContainerStyle={[
+                  styles.messageList,
+                  messages.length > 0 ? styles.messageListStickToBottom : null,
+                ]}
+                showsVerticalScrollIndicator={false}
+                onScroll={handleScroll}
+                onContentSizeChange={onMessageListContentSizeChange}
+                scrollEventThrottle={16}
+                keyboardShouldPersistTaps="handled"
+                removeClippedSubviews={Platform.OS === 'android'}
+                initialNumToRender={24}
+                maxToRenderPerBatch={12}
+                windowSize={7}
+              />
+            )}
+
+            {showScrollDown ? (
+              <TouchableOpacity style={styles.scrollFab} onPress={scrollToEnd} activeOpacity={0.9}>
+                <Ionicons name="chevron-down" size={22} color={colors.textPrimary} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          {replyTarget ? (
+            <View style={styles.replyPreviewBar}>
+              <View
+                style={[
+                  styles.replyPreviewAccent,
+                  {
+                    backgroundColor: replyTarget.isMine ? colors.secondary : colors.primary,
+                  },
+                ]}
+              />
+              <View style={styles.replyPreviewTextCol}>
+                <Text style={styles.replyPreviewName} numberOfLines={1}>
+                  {replyTarget.isMine ? 'You' : title}
                 </Text>
-                <Text style={styles.headerStatus} numberOfLines={1}>
-                  {statusLine}
+                <Text style={styles.replyPreviewSnippet} numberOfLines={2}>
+                  {replyTarget.body}
                 </Text>
               </View>
-            </Pressable>
-          </View>
-
-          <View style={styles.headerRight}>
-            <TouchableOpacity
-              style={styles.headerIconBtn}
-              activeOpacity={0.85}
-              onPress={() =>
-                navigation.navigate(SCREENS.CALL, {
-                  mode: 'video',
-                  peerName: title,
-                  avatarColor: colors.dotInactive,
-                })
-              }
-              accessibilityLabel="Video call demo"
-            >
-              <Ionicons name="videocam-outline" size={22} color={colors.textPrimary} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.headerIconBtn}
-              activeOpacity={0.85}
-              onPress={() =>
-                navigation.navigate(SCREENS.CALL, {
-                  mode: 'voice',
-                  peerName: title,
-                  avatarColor: colors.dotInactive,
-                })
-              }
-              accessibilityLabel="Voice call demo"
-            >
-              <Ionicons name="call-outline" size={20} color={colors.textPrimary} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.chatSurface}>
-          {historyLoading && messages.length === 0 ? (
-            <ChatHistorySkeleton />
-          ) : (
-          <FlatList
-            ref={listRef}
-            data={messages}
-            keyExtractor={(m) => m.id}
-            renderItem={renderMessage}
-            contentContainerStyle={[
-              styles.messageList,
-              messages.length > 0 ? styles.messageListStickToBottom : null,
-            ]}
-            showsVerticalScrollIndicator={false}
-            onScroll={handleScroll}
-            onContentSizeChange={onMessageListContentSizeChange}
-            scrollEventThrottle={16}
-            keyboardShouldPersistTaps="handled"
-            removeClippedSubviews={Platform.OS === 'android'}
-            initialNumToRender={24}
-            maxToRenderPerBatch={12}
-            windowSize={7}
-          />
-          )}
-
-          {showScrollDown ? (
-            <TouchableOpacity style={styles.scrollFab} onPress={scrollToEnd} activeOpacity={0.9}>
-              <Ionicons name="chevron-down" size={22} color={colors.textPrimary} />
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.replyPreviewClose}
+                onPress={() => setReplyTarget(null)}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel reply"
+              >
+                <Ionicons name="close-circle" size={26} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
           ) : null}
-        </View>
 
-        {replyTarget ? (
-          <View style={styles.replyPreviewBar}>
-            <View
-              style={[
-                styles.replyPreviewAccent,
-                {
-                  backgroundColor: replyTarget.isMine ? colors.secondary : colors.primary,
-                },
-              ]}
-            />
-            <View style={styles.replyPreviewTextCol}>
-              <Text style={styles.replyPreviewName} numberOfLines={1}>
-                {replyTarget.isMine ? 'You' : title}
-              </Text>
-              <Text style={styles.replyPreviewSnippet} numberOfLines={2}>
-                {replyTarget.body}
+          {isRecording ? (
+            <View style={styles.recordingBanner}>
+              <View style={styles.recordingDot} />
+              <Text style={styles.recordingText}>
+                Recording {formatVoiceDuration(recordDurationMs / 1000)} · tap mic to send
               </Text>
             </View>
-            <TouchableOpacity
-              style={styles.replyPreviewClose}
-              onPress={() => setReplyTarget(null)}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              accessibilityRole="button"
-              accessibilityLabel="Cancel reply"
-            >
-              <Ionicons name="close-circle" size={26} color={colors.textMuted} />
-            </TouchableOpacity>
-          </View>
-        ) : null}
+          ) : null}
 
-        {isRecording ? (
-          <View style={styles.recordingBanner}>
-            <View style={styles.recordingDot} />
-            <Text style={styles.recordingText}>
-              Recording {formatVoiceDuration(recordDurationMs / 1000)} · tap mic to send
-            </Text>
-          </View>
-        ) : null}
-
-        {showAttachSheet ? (
-          <View style={styles.attachSheet}>
-            <View style={styles.attachHandle} />
-            <View style={styles.attachGrid}>
-              <TouchableOpacity style={styles.attachCell} onPress={handlePickPhoto} activeOpacity={0.85}>
-                <View style={[styles.attachIconCircle, styles.attachIconPhotos]}>
-                  <Ionicons name="images" size={26} color={colors.textLight} />
-                </View>
-                <Text style={styles.attachLabel}>Photos</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.attachCell} onPress={handleTakeCamera} activeOpacity={0.85}>
-                <View style={[styles.attachIconCircle, styles.attachIconCamera]}>
-                  <Ionicons name="camera" size={26} color={colors.textLight} />
-                </View>
-                <Text style={styles.attachLabel}>Camera</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.attachCell} onPress={openContactPicker} activeOpacity={0.85}>
-                <View style={[styles.attachIconCircle, styles.attachIconContact]}>
-                  <Ionicons name="person" size={26} color={colors.textLight} />
-                </View>
-                <Text style={styles.attachLabel}>Contact</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.attachCell} onPress={handlePickDocument} activeOpacity={0.85}>
-                <View style={[styles.attachIconCircle, styles.attachIconDocument]}>
-                  <Ionicons name="document-text" size={26} color={colors.textLight} />
-                </View>
-                <Text style={styles.attachLabel}>Document</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : null}
-
-        <View style={styles.composerWrap}>
           {showAttachSheet ? (
-            <TouchableOpacity
-              style={styles.composerPlus}
-              activeOpacity={0.85}
-              onPress={() => {
-                setShowAttachSheet(false);
-                setTimeout(() => inputRef.current?.focus(), 100);
-              }}
-              accessibilityLabel="Show keyboard"
-            >
-              <Ionicons name="keypad-outline" size={24} color={colors.primary} />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={styles.composerPlus}
-              activeOpacity={0.85}
-              onPress={() => {
-                Keyboard.dismiss();
-                setShowAttachSheet(true);
-              }}
-              accessibilityLabel="Attachments"
-            >
-              <Ionicons name="add" size={28} color={colors.primary} />
-            </TouchableOpacity>
-          )}
+            <View style={styles.attachSheet}>
+              <View style={styles.attachHandle} />
+              <View style={styles.attachGrid}>
+                <TouchableOpacity style={styles.attachCell} onPress={handlePickPhoto} activeOpacity={0.85}>
+                  <View style={[styles.attachIconCircle, styles.attachIconPhotos]}>
+                    <Ionicons name="images" size={26} color={colors.textLight} />
+                  </View>
+                  <Text style={styles.attachLabel}>Photos</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.attachCell} onPress={handleTakeCamera} activeOpacity={0.85}>
+                  <View style={[styles.attachIconCircle, styles.attachIconCamera]}>
+                    <Ionicons name="camera" size={26} color={colors.textLight} />
+                  </View>
+                  <Text style={styles.attachLabel}>Camera</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.attachCell} onPress={openContactPicker} activeOpacity={0.85}>
+                  <View style={[styles.attachIconCircle, styles.attachIconContact]}>
+                    <Ionicons name="person" size={26} color={colors.textLight} />
+                  </View>
+                  <Text style={styles.attachLabel}>Contact</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.attachCell} onPress={handlePickDocument} activeOpacity={0.85}>
+                  <View style={[styles.attachIconCircle, styles.attachIconDocument]}>
+                    <Ionicons name="document-text" size={26} color={colors.textLight} />
+                  </View>
+                  <Text style={styles.attachLabel}>Document</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
 
-          <View style={styles.composerField}>
-            <TextInput
-              ref={inputRef}
-              value={draft}
-              onChangeText={setDraft}
-              placeholder="Message"
-              placeholderTextColor={colors.textMuted}
-              style={styles.composerInput}
-              multiline
-            />
-          </View>
+          <View style={styles.composerWrap}>
+            {showAttachSheet ? (
+              <TouchableOpacity
+                style={styles.composerPlus}
+                activeOpacity={0.85}
+                onPress={() => {
+                  setShowAttachSheet(false);
+                  setTimeout(() => inputRef.current?.focus(), 100);
+                }}
+                accessibilityLabel="Show keyboard"
+              >
+                <Ionicons name="keypad-outline" size={24} color={colors.primary} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.composerPlus}
+                activeOpacity={0.85}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  setShowAttachSheet(true);
+                }}
+                accessibilityLabel="Attachments"
+              >
+                <Ionicons name="add" size={28} color={colors.primary} />
+              </TouchableOpacity>
+            )}
 
-          <TouchableOpacity
-            style={styles.composerCameraButton}
-            onPress={handleTakeCamera}
-            activeOpacity={0.85}
-            accessibilityLabel="Open camera"
-          >
-            <Ionicons name="camera-outline" size={26} color={colors.primary} />
-          </TouchableOpacity>
-
-          {hasDraft ? (
-            <TouchableOpacity
-              style={styles.composerCircleButton}
-              onPress={handleSend}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel="Send message"
-            >
-              <Ionicons name="send" size={22} color={colors.textLight} style={styles.sendIcon} />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={[styles.composerCircleButton, isRecording && styles.composerCircleRecord]}
-              onPress={onMicPress}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel={isRecording ? 'Stop and send recording' : 'Record voice message'}
-            >
-              <Ionicons
-                name={isRecording ? 'stop' : 'mic'}
-                size={isRecording ? 22 : 24}
-                color={colors.textLight}
+            <View style={styles.composerField}>
+              <TextInput
+                ref={inputRef}
+                value={draft}
+                onChangeText={setDraft}
+                placeholder="Message"
+                placeholderTextColor={colors.textMuted}
+                style={styles.composerInput}
+                multiline
               />
+            </View>
+
+            <TouchableOpacity
+              style={styles.composerCameraButton}
+              onPress={handleTakeCamera}
+              activeOpacity={0.85}
+              accessibilityLabel="Open camera"
+            >
+              <Ionicons name="camera-outline" size={26} color={colors.primary} />
             </TouchableOpacity>
-          )}
-        </View>
-      </KeyboardAvoidingView>
+
+            {hasDraft ? (
+              <TouchableOpacity
+                style={styles.composerCircleButton}
+                onPress={handleSend}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Send message"
+              >
+                <Ionicons name="send" size={22} color={colors.textLight} style={styles.sendIcon} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.composerCircleButton, isRecording && styles.composerCircleRecord]}
+                onPress={onMicPress}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={isRecording ? 'Stop and send recording' : 'Record voice message'}
+              >
+                <Ionicons
+                  name={isRecording ? 'stop' : 'mic'}
+                  size={isRecording ? 22 : 24}
+                  color={colors.textLight}
+                />
+              </TouchableOpacity>
+            )}
+          </View>
+        </KeyboardAvoidingView>
       </SafeAreaView>
 
       <Modal
@@ -1825,6 +1884,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.sm,
+    overflow: 'hidden',
+  },
+  headerAvatarImage: {
+    width: '100%',
+    height: '100%',
   },
   headerAvatarLetter: {
     fontSize: typography.fontSizeLG,

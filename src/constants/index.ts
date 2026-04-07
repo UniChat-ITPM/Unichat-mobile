@@ -20,6 +20,7 @@ export const SCREENS = {
   STORAGE_DATA: 'StorageData',
   HELP_SUPPORT: 'HelpSupport',
   EDIT_PROFILE: 'EditProfile',
+  EDIT_GROUP: 'EditGroup',
   /** Root tab shell (Chats, Groups, Calls, Settings) */
   MAIN: 'Main',
   TAB_CHATS: 'ChatsTab',

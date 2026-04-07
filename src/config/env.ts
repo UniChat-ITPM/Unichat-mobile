@@ -9,40 +9,115 @@ interface EnvConfig {
   REQUEST_TIMEOUT: number;
 }
 
+type ManifestExtra = {
+  apiBaseUrl?: string;
+  realtimeBaseUrl?: string;
+  /** PC LAN IPv4 for physical devices when Metro uses a tunnel URL (`*.exp.direct`, ngrok). Not used when Metro is `localhost` (simulator / same machine). */
+  devLanHost?: string;
+  releaseChannel?: string;
+};
+
+function getManifestExtra(): ManifestExtra | undefined {
+  return (Constants.expoConfig?.extra ?? Constants.manifest?.extra) as ManifestExtra | undefined;
+}
+
 /**
- * In dev mode, Expo's debuggerHost gives us the LAN IP of the machine
- * running the bundler (e.g. "192.168.8.187:8081"). We extract just the IP
- * so the physical device can reach the backend over the local network.
+ * Expo `hostUri` / `debuggerHost` is where the **Metro bundler** is reached.
+ * With `--tunnel`, that is `*.exp.direct` — not your machine, so `http://that:4225` never reaches the API.
+ * `localhost` / `127.0.0.1` is the device itself on a physical phone.
  */
-function getDevApiUrl(): string {
+function extractReachableDevHost(): string | null {
   const debuggerHost =
     Constants.expoConfig?.hostUri ?? Constants.manifest?.debuggerHost;
+  if (!debuggerHost) return null;
 
-  if (debuggerHost) {
-    const ip = debuggerHost.split(':')[0]; // strip the port
-    return `http://${ip}:4225/api`;
+  const host = debuggerHost.split(':')[0].trim();
+  if (!host) return null;
+
+  const lower = host.toLowerCase();
+  if (lower === 'localhost' || lower === '127.0.0.1') return null;
+  if (lower.endsWith('.exp.direct')) return null;
+  if (lower.includes('ngrok') || lower.endsWith('.ngrok.io') || lower.endsWith('.ngrok-free.app')) {
+    return null;
   }
 
-  // Fallback — only works on emulator / same machine
-  return 'http://localhost:4225/api';
+  return host;
+}
+
+function getMetroDevHostname(): string {
+  const raw = Constants.expoConfig?.hostUri ?? Constants.manifest?.debuggerHost ?? '';
+  return raw.split(':')[0].trim();
+}
+
+function isTunnelMetroHost(hostLower: string): boolean {
+  return (
+    hostLower.endsWith('.exp.direct') ||
+    hostLower.includes('ngrok') ||
+    hostLower.endsWith('.ngrok.io') ||
+    hostLower.endsWith('.ngrok-free.app')
+  );
+}
+
+/**
+ * Host for local HTTP API and Socket.IO in dev (no port).
+ * Matches `staging_v1` when Metro is LAN or localhost; uses `devLanHost` only for tunnel/proxy Metro hosts.
+ */
+function resolveDevBackendHost(): string {
+  const ex = getManifestExtra();
+  const manual = ex?.devLanHost?.trim();
+  const metro = getMetroDevHostname();
+  const lower = metro.toLowerCase();
+
+  const lanHost = extractReachableDevHost();
+  if (lanHost) {
+    return lanHost;
+  }
+
+  // Simulator / same machine: staging_v1 used Metro's localhost here — do not override with devLanHost.
+  if (!metro || lower === 'localhost' || lower === '127.0.0.1') {
+    return 'localhost';
+  }
+
+  if (isTunnelMetroHost(lower)) {
+    if (manual) {
+      return manual;
+    }
+    if (__DEV__) {
+      console.warn(
+        '[env] Metro is on a tunnel/proxy host (',
+        metro,
+        ') — set expo.extra.devLanHost in app.json to your PC IPv4 (same Wi‑Fi) so the phone can reach :4225 and :8228.',
+      );
+    }
+    return 'localhost';
+  }
+
+  if (manual) {
+    return manual;
+  }
+
+  if (__DEV__) {
+    console.warn('[env] Could not infer backend host from Metro; using localhost.');
+  }
+  return 'localhost';
+}
+
+function getDevApiUrl(): string {
+  const h = resolveDevBackendHost();
+  return `http://${h}:4225/api`;
 }
 
 function getDevRealtimeUrl(): string {
-  const debuggerHost =
-    Constants.expoConfig?.hostUri ?? Constants.manifest?.debuggerHost;
-
-  if (debuggerHost) {
-    const ip = debuggerHost.split(':')[0];
-    return `http://${ip}:8228`;
-  }
-  return 'http://localhost:8228';
+  const h = resolveDevBackendHost();
+  return `http://${h}:8228`;
 }
 
 const ENV_CONFIGS: Record<Environment, EnvConfig> = {
   development: {
     API_BASE_URL: getDevApiUrl(),
     REALTIME_BASE_URL: getDevRealtimeUrl(),
-    REQUEST_TIMEOUT: 15_000,
+    // Local stack (gateway → otp → WhatsApp / auth / RabbitMQ) often needs >15s on first call.
+    REQUEST_TIMEOUT: 60_000,
   },
   staging: {
     API_BASE_URL: 'https://staging-api.unichat.app/api',
@@ -67,9 +142,7 @@ function getCurrentEnvironment(): Environment {
 export const ENV = ENV_CONFIGS[getCurrentEnvironment()];
 
 /** Optional overrides from `app.config` / `app.json` → `expo.extra`. */
-const extra = (Constants.expoConfig?.extra ?? Constants.manifest?.extra) as
-  | { apiBaseUrl?: string; realtimeBaseUrl?: string }
-  | undefined;
+const extra = getManifestExtra();
 
 /**
  * Axios `baseURL` must end with exactly one `/api` (paths are `/auth/...`, `/conversations/...`).

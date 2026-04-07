@@ -266,6 +266,7 @@ const HomeScreen = ({
                 unreadCount={item.unreadCount}
                 isOnline={item.isOnline}
                 avatarColor={item.avatarColor}
+                imageUrl={item.imageUrl}
                 onPress={() =>
                   navigation.navigate(SCREENS.CHAT, {
                     name: item.name,
@@ -273,6 +274,7 @@ const HomeScreen = ({
                     status: item.isOnline ? 'online' : 'last seen recently',
                     unreadBackHrefCount: unreadTotal,
                     isGroup: item.isGroup,
+                    imageUrl: item.imageUrl,
                   })
                 }
               />

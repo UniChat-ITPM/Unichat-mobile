@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RouteProp } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import { APP_NAME, SCREENS } from '../constants';
 import { colors } from '../theme/colors';
@@ -34,6 +35,7 @@ import {
 } from '../utils/contactPhoneNormalize';
 import { loadAllDeviceContacts } from '../utils/loadAllContacts';
 import { inferIsGroupFromConversationDto } from '../utils/conversationPreview';
+import { toBase64DataUri } from '../utils/image';
 
 const LETTER_INDEX = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ#'.split('');
 
@@ -86,6 +88,9 @@ const NewChatScreen = ({
   const [userIdExpanded, setUserIdExpanded] = useState(false);
   const [participantUserId, setParticipantUserId] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const [groupTitle, setGroupTitle] = useState('');
+  const [selectedImage, setSelectedImage] = useState<{ uri: string; mimeType: string } | null>(null);
 
   const listRef = useRef<SectionList<SectionRow, { title: string; data: SectionRow[] }>>(null);
 
@@ -175,6 +180,7 @@ const NewChatScreen = ({
           conversationId: conv.id,
           status: 'Tap for info',
           isGroup: inferIsGroupFromConversationDto(conv),
+          imageUrl: conv.imageUrl ?? null,
         });
       } catch (e) {
         Alert.alert('Could not start chat', conversationsErrorMessage(e));
@@ -194,30 +200,63 @@ const NewChatScreen = ({
     await openChat(pid, 'Chat');
   }, [participantUserId, openChat]);
 
+  const handlePickImage = useCallback(async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert(
+        'Permission Required',
+        'Please allow access to your photo library to select a group picture.',
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      setSelectedImage({
+        uri: asset.uri,
+        mimeType: asset.mimeType ?? 'image/jpeg',
+      });
+    }
+  }, []);
+
   const createGroup = useCallback(async () => {
     const ids = Array.from(selectedUserIds);
     if (ids.length === 0) {
       Alert.alert('Select members', 'Choose at least one person for the group.');
       return;
     }
+    const finalTitle = groupTitle.trim() || 'New group';
     setBusy(true);
     try {
+      let imageUrl = undefined;
+      if (selectedImage) {
+        imageUrl = await toBase64DataUri(selectedImage.uri, selectedImage.mimeType);
+      }
       const conv = await createGroupConversation({
-        title: 'New group',
+        title: finalTitle,
+        imageUrl,
         participantUserIds: ids,
       });
       navigation.replace(SCREENS.CHAT, {
-        name: String(conv.title ?? conv.name ?? 'New group'),
+        name: String(conv.title ?? conv.name ?? finalTitle),
         conversationId: conv.id,
         status: 'Tap for info',
         isGroup: true,
+        imageUrl: conv.imageUrl ?? null,
       });
     } catch (e) {
       Alert.alert('Could not create group', conversationsErrorMessage(e));
     } finally {
       setBusy(false);
     }
-  }, [navigation, selectedUserIds]);
+  }, [navigation, selectedUserIds, groupTitle, selectedImage]);
 
   const toggleSelected = useCallback((id: string) => {
     setSelectedUserIds((prev) => {
@@ -231,6 +270,8 @@ const NewChatScreen = ({
   const exitGroupMode = useCallback(() => {
     setGroupPickMode(false);
     setSelectedUserIds(new Set());
+    setGroupTitle('');
+    setSelectedImage(null);
   }, []);
 
   const scrollToLetter = useCallback(
@@ -254,6 +295,28 @@ const NewChatScreen = ({
   const ListHeader = useCallback(
     () => (
       <>
+        {groupPickMode && (
+          <View style={styles.groupSetupCard}>
+            <TouchableOpacity onPress={handlePickImage} style={styles.groupPhotoBtn} disabled={busy}>
+              {selectedImage ? (
+                <Image source={{ uri: selectedImage.uri }} style={styles.groupPhotoImage} />
+              ) : (
+                <View style={styles.groupPhotoPlaceholder}>
+                  <Ionicons name="camera" size={24} color={colors.primary} />
+                </View>
+              )}
+            </TouchableOpacity>
+            <TextInput
+              style={styles.groupTitleInput}
+              placeholder="Group Subject (optional)"
+              placeholderTextColor={colors.textMuted}
+              value={groupTitle}
+              onChangeText={setGroupTitle}
+              maxLength={50}
+              editable={!busy}
+            />
+          </View>
+        )}
         <View style={styles.searchWrap}>
           <Ionicons name="search-outline" size={18} color={colors.textMuted} />
           <TextInput
@@ -363,6 +426,9 @@ const NewChatScreen = ({
       loadError,
       busy,
       submitUserId,
+      groupTitle,
+      selectedImage,
+      handlePickImage,
     ],
   );
 
@@ -580,6 +646,47 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizeSM,
     color: colors.textPrimary,
     paddingVertical: 0,
+  },
+  groupSetupCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: spacing.md,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+    padding: spacing.md,
+    backgroundColor: colors.background,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  groupPhotoBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    marginRight: spacing.md,
+  },
+  groupPhotoImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+  },
+  groupPhotoPlaceholder: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  groupTitleInput: {
+    flex: 1,
+    fontSize: typography.fontSizeMD,
+    color: colors.textPrimary,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
   actionsCard: {
     marginHorizontal: spacing.md,

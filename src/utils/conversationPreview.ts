@@ -10,6 +10,7 @@ export type ChatPreviewRow = {
   avatarColor?: string;
   isGroup?: boolean;
   isFavorite?: boolean;
+  imageUrl?: string | null;
 };
 
 const AVATAR_COLORS = ['#E0E7FF', '#F3E8FF', '#DBEAFE', '#E0F2FE', '#DCFCE7', '#FCE7F3'];
@@ -92,6 +93,44 @@ function resolvePreviewName(c: ConversationSummaryDto, currentUserId?: string | 
   return 'Conversation';
 }
 
+/**
+ * Avatar URL for a conversation: group `imageUrl`, or the other participant’s profile photo for direct chats.
+ * Use for chat list rows, chat header, etc.
+ */
+export function resolveConversationAvatarUrl(
+  c: ConversationSummaryDto,
+  currentUserId?: string | null,
+): string | null {
+  if (inferIsGroupFromConversationDto(c)) {
+    const g = c.imageUrl?.trim();
+    return g || null;
+  }
+  const peerPhoto = (p: (typeof c.participants)[number]): string | null => {
+    if (!p || typeof p !== 'object') return null;
+    const flat = (p as { profilePhoto?: string | null }).profilePhoto?.trim();
+    if (flat) return flat;
+    const nested = (p as { user?: { avatarUrl?: string | null } }).user?.avatarUrl?.trim();
+    return nested || null;
+  };
+
+  if (currentUserId && Array.isArray(c.participants) && c.participants.length > 0) {
+    const other = c.participants.find((p) => p.userId !== currentUserId);
+    const fromParticipant = other ? peerPhoto(other) : null;
+    if (fromParticipant) {
+      return fromParticipant;
+    }
+  }
+  // Two-user direct thread when `currentUserId` is missing: use the only non–self row if obvious
+  if (Array.isArray(c.participants) && c.participants.length === 2 && c.peerUserId) {
+    const peer = c.participants.find((p) => p.userId === c.peerUserId);
+    const url = peer ? peerPhoto(peer) : null;
+    if (url) {
+      return url;
+    }
+  }
+  return null;
+}
+
 export function conversationDtoToPreview(
   c: ConversationSummaryDto,
   index: number,
@@ -108,5 +147,6 @@ export function conversationDtoToPreview(
     isGroup: inferIsGroupFromConversationDto(c),
     isFavorite: Boolean(c.isFavorite),
     avatarColor: AVATAR_COLORS[index % AVATAR_COLORS.length],
+    imageUrl: resolveConversationAvatarUrl(c, currentUserId),
   };
 }
