@@ -13,6 +13,7 @@ import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { spacing } from '../theme/spacing';
 import { scrollPaddingAboveMainTabBar } from '../theme/layout';
+import { getNotificationPreferences, updateNotificationPreferences } from '../services/notificationService';
 
 const SwitchRow = ({ icon, title, subtitle, value, onValueChange, iconColor = colors.primary }) => (
   <View style={styles.row}>
@@ -38,6 +39,27 @@ const NotificationsSettingsScreen = ({ navigation }) => {
   const [msgVibrate, setMsgVibrate] = useState(true);
   const [groupTones, setGroupTones] = useState(true);
   const [groupVibrate, setGroupVibrate] = useState(false);
+  
+  const [otpNotifications, setOtpNotifications] = useState(true);
+  const [securityNotifications, setSecurityNotifications] = useState(true);
+  const [pushNotifications, setPushNotifications] = useState(false);
+
+  React.useEffect(() => {
+    // Load initial preferences
+    getNotificationPreferences().then(prefs => {
+      setMsgTones(prefs.messageNotifications);
+      setGroupTones(prefs.groupNotifications);
+      setOtpNotifications(prefs.otpNotifications);
+      setSecurityNotifications(prefs.securityNotifications);
+      setPushNotifications(prefs.pushNotifications);
+    }).catch(console.error);
+  }, []);
+
+  const handleUpdatePreference = (key: string, value: boolean) => {
+    // Optimistic UI update and backend call
+    const payload = { [key]: value };
+    updateNotificationPreferences(payload).catch(console.error);
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -66,7 +88,7 @@ const NotificationsSettingsScreen = ({ navigation }) => {
             title="Conversation Tones"
             subtitle="Play sounds for incoming messages"
             value={msgTones}
-            onValueChange={setMsgTones}
+            onValueChange={(val) => { setMsgTones(val); handleUpdatePreference('messageNotifications', val); }}
           />
           <View style={styles.divider} />
           <SwitchRow
@@ -85,7 +107,7 @@ const NotificationsSettingsScreen = ({ navigation }) => {
             title="Group Tones"
             subtitle="Play sounds for group messages"
             value={groupTones}
-            onValueChange={setGroupTones}
+            onValueChange={(val) => { setGroupTones(val); handleUpdatePreference('groupNotifications', val); }}
           />
           <View style={styles.divider} />
           <SwitchRow
@@ -94,6 +116,36 @@ const NotificationsSettingsScreen = ({ navigation }) => {
             subtitle="Vibrate on group message"
             value={groupVibrate}
             onValueChange={setGroupVibrate}
+          />
+        </View>
+
+        <Text style={styles.sectionTitle}>System & Security</Text>
+        <View style={styles.card}>
+          <SwitchRow
+            icon="key-outline"
+            title="OTP Notifications"
+            subtitle="Receive login verification codes"
+            value={otpNotifications}
+            onValueChange={(val) => { setOtpNotifications(val); handleUpdatePreference('otpNotifications', val); }}
+          />
+          <View style={styles.divider} />
+          <SwitchRow
+            icon="shield-checkmark-outline"
+            title="Security Alerts"
+            subtitle="Get notified about suspicious logins"
+            value={securityNotifications}
+            onValueChange={(val) => { setSecurityNotifications(val); handleUpdatePreference('securityNotifications', val); }}
+          />
+        </View>
+
+        <Text style={styles.sectionTitle}>Device Settings</Text>
+        <View style={styles.card}>
+          <SwitchRow
+            icon="notifications-circle-outline"
+            title="Push Notifications"
+            subtitle="Receive alerts outside the app"
+            value={pushNotifications}
+            onValueChange={(val) => { setPushNotifications(val); handleUpdatePreference('pushNotifications', val); }}
           />
         </View>
 

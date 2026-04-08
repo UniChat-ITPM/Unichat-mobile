@@ -22,6 +22,7 @@ export const SCREENS = {
   HELP_SUPPORT: 'HelpSupport',
   EDIT_PROFILE: 'EditProfile',
   EDIT_GROUP: 'EditGroup',
+  NOTIFICATION_CENTER: 'NotificationCenter',
   /** Root tab shell (Chats, Groups, Calls, Settings) */
   MAIN: 'Main',
   TAB_CHATS: 'ChatsTab',

@@ -33,6 +33,7 @@ import {
 import { loadCachedConversationList, saveCachedConversationList } from '../services/chatCache';
 import type { ConversationSummaryDto } from '../types/conversations';
 import { subscribeRealtime } from '../services/chatSocket';
+import { getUnreadNotificationCount } from '../services/notificationService';
 
 type FilterKey = 'all' | 'unread' | 'favorites' | 'groups';
 
@@ -75,6 +76,7 @@ const HomeScreen = ({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const firstLoadRef = useRef(true);
 
   const loadChats = useCallback(async (fromPullRefresh = false) => {
@@ -125,6 +127,7 @@ const HomeScreen = ({
   useFocusEffect(
     useCallback(() => {
       loadChats(false);
+      getUnreadNotificationCount().then(setNotificationUnreadCount).catch(console.error);
     }, [loadChats]),
   );
 
@@ -189,6 +192,18 @@ const HomeScreen = ({
         <View style={styles.topBar}>
           <Text style={styles.title}>{screenTitle}</Text>
           <View style={styles.topActions}>
+            <TouchableOpacity 
+              style={styles.actionButton} 
+              activeOpacity={0.85}
+              onPress={() => navigation.navigate(SCREENS.NOTIFICATION_CENTER)}
+            >
+              <Ionicons name="notifications-outline" size={20} color={colors.textPrimary} />
+              {notificationUnreadCount > 0 && (
+                <View style={styles.bellBadge}>
+                  <Text style={styles.bellBadgeText}>{notificationUnreadCount}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
             <TouchableOpacity style={styles.actionButton} activeOpacity={0.85}>
               <Ionicons name="camera-outline" size={20} color={colors.textPrimary} />
             </TouchableOpacity>
@@ -339,6 +354,26 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+  },
+  bellBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: colors.primary, // Using primary since red might not be defined in your theme
+    borderRadius: 10,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: colors.backgroundSecondary,
+  },
+  bellBadgeText: {
+    color: colors.textLight,
+    fontSize: 9,
+    fontWeight: typography.fontWeightBold,
   },
   actionButtonPrimary: {
     width: 36,
