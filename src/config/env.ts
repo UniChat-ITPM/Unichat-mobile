@@ -14,6 +14,8 @@ interface EnvConfig {
 type ManifestExtra = {
   apiBaseUrl?: string;
   realtimeBaseUrl?: string;
+  /** Call signaling Socket.IO origin (no path; uses `/call/socket.io`). Defaults to API host without `/api`. */
+  callSignalingBaseUrl?: string;
   /** Override Singlish conversion service origin, e.g. `http://192.168.1.5:5050` */
   singlishConversionBaseUrl?: string;
   /** PC LAN IPv4 for physical devices when Metro uses a tunnel URL (`*.exp.direct`, ngrok). Not used when Metro is `localhost` (simulator / same machine). */
@@ -189,6 +191,14 @@ export const REALTIME_BASE_URL_RESOLVED =
   extra?.realtimeBaseUrl && extra.realtimeBaseUrl.length > 0
     ? extra.realtimeBaseUrl.replace(/\/$/, '')
     : ENV.REALTIME_BASE_URL;
+
+/**
+ * WebRTC signaling: same host as HTTP API in dev/staging/prod (gateway proxies `/call/socket.io` → call-service).
+ */
+export const CALL_SIGNALING_ORIGIN_RESOLVED =
+  extra?.callSignalingBaseUrl && extra.callSignalingBaseUrl.length > 0
+    ? extra.callSignalingBaseUrl.replace(/\/$/, '')
+    : API_BASE_URL_RESOLVED.replace(/\/api$/, '');
 
 /**
  * Singlish conversion Flask service (origin only). Override: `expo.extra.singlishConversionBaseUrl`.

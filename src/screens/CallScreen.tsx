@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  Platform,
   StatusBar,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -13,13 +13,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
+import { useAuth } from '../context/AuthContext';
+import {
+  connectCallSocket,
+  getCallSocket,
+  waitForCallSocketConnect,
+} from '../services/callSocket';
+import { appendCallLog } from '../services/callLogStorage';
+import { emitCallAccept, emitCallEnd, emitCallInvite } from '../services/callSignaling';
+import type { CallInviteAck, CallSimpleAck } from '../types/callSignaling';
+import type { CallScreenParams } from '../types/callScreenParams';
 
-export type CallScreenParams = {
-  mode: 'voice' | 'video';
-  peerName: string;
-  /** Avatar circle fill (defaults to soft indigo-tint) */
-  avatarColor?: string;
-};
+export type { CallScreenParams };
 
 function formatDuration(totalSec: number): string {
   const s = Math.max(0, Math.floor(totalSec));
@@ -33,23 +38,207 @@ type Props = {
   route: { params?: CallScreenParams };
 };
 
+/**
+ * Signaling-only call UI (Socket.IO + call-service). No native WebRTC — runs in Expo Go.
+ * Real microphone/speaker requires a dev build with react-native-webrtc later.
+ */
 const CallScreen = ({ navigation, route }: Props) => {
   const params = route.params;
   const mode = params?.mode ?? 'voice';
   const peerName = params?.peerName?.trim() || 'Contact';
   const avatarColor = params?.avatarColor ?? colors.dotInactive;
   const initial = peerName.charAt(0).toUpperCase() || 'C';
+  const peerUserId = params?.peerUserId?.trim();
+  const incomingCallId = params?.incomingCallId?.trim();
+
+  const { accessToken, user } = useAuth();
+  const callIdRef = useRef<string | null>(null);
 
   const [connected, setConnected] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [muted, setMuted] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(false);
   const [camOn, setCamOn] = useState(true);
+  const [signalingLine, setSignalingLine] = useState<string | null>(null);
+
+  const canSignal = Boolean(accessToken && (peerUserId || incomingCallId));
+  const invalidCallRef = useRef(false);
+  const hasLoggedCallRef = useRef(false);
+
+  const appendSessionLog = useCallback(
+    (callIdOverride?: string | null) => {
+      if (hasLoggedCallRef.current) {
+        return;
+      }
+      const pid = (peerUserId ?? params?.fromUserId ?? '').trim();
+      if (!pid) {
+        return;
+      }
+      hasLoggedCallRef.current = true;
+      const cidRaw =
+        (callIdOverride != null ? String(callIdOverride).trim() : '') ||
+        callIdRef.current?.trim() ||
+        incomingCallId?.trim() ||
+        '';
+      void appendCallLog({
+        callId: cidRaw || undefined,
+        peerUserId: pid,
+        name: peerName.trim() || 'Contact',
+        direction: incomingCallId ? 'incoming' : 'outgoing',
+        isVideo: mode === 'video',
+        avatarColor,
+      });
+    },
+    [peerUserId, params?.fromUserId, peerName, incomingCallId, mode, avatarColor],
+  );
 
   useEffect(() => {
-    const t = setTimeout(() => setConnected(true), 1200);
-    return () => clearTimeout(t);
-  }, []);
+    if (!canSignal) {
+      if (invalidCallRef.current) {
+        return undefined;
+      }
+      invalidCallRef.current = true;
+      const msg = !accessToken
+        ? 'Sign in to use calls.'
+        : 'Open a private chat and start a call from there.';
+      Alert.alert('Call unavailable', msg, [{ text: 'OK', onPress: () => navigation.goBack() }]);
+      return undefined;
+    }
+
+    invalidCallRef.current = false;
+    connectCallSocket(accessToken!);
+
+    let cancelled = false;
+    const s = getCallSocket();
+    if (!s) {
+      Alert.alert('Call', 'Signaling not ready. Try again.', [
+        { text: 'OK', onPress: () => navigation.goBack() },
+      ]);
+      return undefined;
+    }
+
+    setSignalingLine('Connecting signaling…');
+
+    const fail = (msg: string) => {
+      if (cancelled) {
+        return;
+      }
+      appendSessionLog(callIdRef.current ?? incomingCallId ?? null);
+      setSignalingLine(msg);
+      Alert.alert('Call', msg);
+    };
+
+    const onAccepted = () => {
+      if (cancelled) {
+        return;
+      }
+      setConnected(true);
+      setSignalingLine(null);
+    };
+
+    const tearDownPeer = (label: string) => {
+      if (cancelled) {
+        return;
+      }
+      appendSessionLog(callIdRef.current ?? incomingCallId ?? null);
+      setSignalingLine(label);
+      navigation.goBack();
+    };
+
+    const onRejected = () => tearDownPeer('Call declined');
+    const onCancelled = () => tearDownPeer('Call cancelled');
+    const onEnded = () => tearDownPeer('Call ended');
+
+    const beginInviteOrAccept = () => {
+      if (cancelled) {
+        return;
+      }
+      if (incomingCallId) {
+        setSignalingLine('Connecting…');
+        emitCallAccept(s, incomingCallId, (ack: CallSimpleAck) => {
+          if (cancelled) {
+            return;
+          }
+          if (ack.ok) {
+            callIdRef.current = incomingCallId;
+            setConnected(true);
+            setSignalingLine(null);
+          } else {
+            fail(ack.error ?? 'Could not accept call');
+          }
+        });
+        return;
+      }
+      if (peerUserId) {
+        setSignalingLine('Ringing…');
+        emitCallInvite(
+          s,
+          peerUserId,
+          mode,
+          (ack: CallInviteAck) => {
+            if (cancelled) {
+              return;
+            }
+            if (ack.ok) {
+              callIdRef.current = ack.callId;
+            } else {
+              fail(ack.error ?? 'Could not start call');
+            }
+          },
+          { callerDisplayName: user?.displayName },
+        );
+      }
+    };
+
+    const onConnectError = () => {
+      fail('Signaling unreachable — is the gateway + call-service running?');
+    };
+
+    s.on('call:accepted', onAccepted);
+    s.on('call:rejected', onRejected);
+    s.on('call:cancelled', onCancelled);
+    s.on('call:ended', onEnded);
+    s.on('connect_error', onConnectError);
+
+    void waitForCallSocketConnect(15_000).then((ok) => {
+      if (cancelled) {
+        return;
+      }
+      if (!ok || !getCallSocket()?.connected) {
+        fail('Signaling unreachable — is the gateway + call-service running?');
+        navigation.goBack();
+        return;
+      }
+      beginInviteOrAccept();
+    });
+
+    return () => {
+      cancelled = true;
+      s.off('call:accepted', onAccepted);
+      s.off('call:rejected', onRejected);
+      s.off('call:cancelled', onCancelled);
+      s.off('call:ended', onEnded);
+      s.off('connect_error', onConnectError);
+      const cid = callIdRef.current;
+      const gs = getCallSocket();
+      if (cid && gs?.connected) {
+        emitCallEnd(gs, cid);
+      }
+      if (!hasLoggedCallRef.current && cid) {
+        appendSessionLog(cid);
+      }
+      callIdRef.current = null;
+    };
+  }, [
+    canSignal,
+    accessToken,
+    peerUserId,
+    incomingCallId,
+    mode,
+    navigation,
+    user?.displayName,
+    appendSessionLog,
+  ]);
 
   useEffect(() => {
     if (!connected) {
@@ -60,20 +249,31 @@ const CallScreen = ({ navigation, route }: Props) => {
   }, [connected]);
 
   const statusLabel = useMemo(() => {
+    if (signalingLine) {
+      return signalingLine;
+    }
     if (!connected) {
       return mode === 'video' ? 'Connecting video…' : 'Connecting…';
     }
     return formatDuration(elapsedSec);
-  }, [connected, mode, elapsedSec]);
+  }, [connected, mode, elapsedSec, signalingLine]);
 
   const subtitle = useMemo(() => {
     if (!connected) {
-      return 'Demo call';
+      return 'Signaling';
     }
     return mode === 'video' ? 'Video call' : 'Voice call';
   }, [connected, mode]);
 
-  const endCall = useCallback(() => navigation.goBack(), [navigation]);
+  const endCall = useCallback(() => {
+    appendSessionLog(callIdRef.current ?? incomingCallId ?? null);
+    const cid = callIdRef.current;
+    const gs = getCallSocket();
+    if (cid && gs?.connected) {
+      emitCallEnd(gs, cid);
+    }
+    navigation.goBack();
+  }, [navigation, appendSessionLog, incomingCallId]);
 
   const toggleMute = useCallback(() => {
     setMuted((m) => !m);
@@ -111,7 +311,7 @@ const CallScreen = ({ navigation, route }: Props) => {
           <View style={styles.videoStage}>
             <View style={styles.remoteDim}>
               <Ionicons name="videocam-outline" size={56} color="rgba(255,255,255,0.35)" />
-              <Text style={styles.remoteHint}>Remote video (demo)</Text>
+              <Text style={styles.remoteHint}>Signaling only — no live video in Expo Go</Text>
               <Text style={styles.remoteName} numberOfLines={1}>
                 {peerName}
               </Text>
@@ -140,6 +340,9 @@ const CallScreen = ({ navigation, route }: Props) => {
               {peerName}
             </Text>
             <Text style={styles.peerSubtitle}>{subtitle}</Text>
+            {connected ? (
+              <Text style={styles.signalingOk}>Call connected (signaling)</Text>
+            ) : null}
           </View>
         )}
 
@@ -151,6 +354,7 @@ const CallScreen = ({ navigation, route }: Props) => {
                   style={[styles.ctrlBtn, speakerOn && styles.ctrlBtnActive]}
                   onPress={() => setSpeakerOn((v) => !v)}
                   activeOpacity={0.85}
+                  accessibilityLabel="Speaker (UI only — no live audio)"
                 >
                   <Ionicons
                     name={speakerOn ? 'volume-high' : 'volume-medium-outline'}
@@ -162,6 +366,7 @@ const CallScreen = ({ navigation, route }: Props) => {
                   style={[styles.ctrlBtn, muted && styles.ctrlBtnMuted]}
                   onPress={toggleMute}
                   activeOpacity={0.85}
+                  accessibilityLabel="Mute (UI only — no live audio)"
                 >
                   <Ionicons
                     name={muted ? 'mic-off' : 'mic'}
@@ -205,9 +410,11 @@ const CallScreen = ({ navigation, route }: Props) => {
             <Ionicons name="call" size={28} color={colors.textLight} style={styles.endIcon} />
           </TouchableOpacity>
 
-          <Text style={styles.demoNote}>
-            {Platform.OS === 'web' ? 'Demo UI — no real media' : 'Demo — no real media yet'}
-          </Text>
+          {canSignal ? (
+            <Text style={styles.demoNote}>
+              Expo Go: signaling only. Real audio/video needs a development build with WebRTC.
+            </Text>
+          ) : null}
         </View>
       </SafeAreaView>
     </View>
@@ -276,6 +483,7 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizeMD,
     color: 'rgba(255,255,255,0.55)',
     fontWeight: typography.fontWeightMedium,
+    textAlign: 'center',
   },
   remoteName: {
     marginTop: spacing.sm,
@@ -313,6 +521,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
+  },
+  signalingOk: {
+    marginTop: spacing.md,
+    fontSize: typography.fontSizeSM,
+    color: 'rgba(34,197,94,0.95)',
+    fontWeight: typography.fontWeightSemiBold,
   },
   heroAvatar: {
     width: 132,

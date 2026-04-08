@@ -14,11 +14,12 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Allow UniChat to record voice messages.",
+        "NSMicrophoneUsageDescription": "Allow UniChat for voice messages and voice/video calls.",
         "NSPhotoLibraryUsageDescription": "Allow UniChat to attach photos from your library.",
         "NSCameraUsageDescription": "Allow UniChat to take photos for chat.",
         "NSContactsUsageDescription": "UniChat uses contacts to find people you know on the app and to share contact cards in chat."
-      }
+      },
+      "bitcode": false
     },
     "android": {
       "softwareKeyboardLayoutMode": "resize",
@@ -26,14 +27,31 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.READ_CONTACTS",
         "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.INTERNET",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WAKE_LOCK",
+        "android.permission.BLUETOOTH",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_CONTACTS",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.INTERNET",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WAKE_LOCK",
+        "android.permission.BLUETOOTH"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "package": "com.anonymous.unichatreactnative"
     },
     "web": {
       "favicon": "./assets/favicon.png"

@@ -13,6 +13,11 @@ import { setUserIdMemory } from "../auth/userIdStore";
 import { User, VerifyOtpResponse } from "../types/auth";
 import { verifyOtp } from "../services/auth";
 import { disconnectChatSocket, reconnectChatSocketWithToken } from "../services/chatSocket";
+import {
+  disconnectCallSocket,
+  reconnectCallSocketWithToken,
+  syncCallSocketWithAuth,
+} from "../services/callSocket";
 
 /* ─── Storage keys ────────────────────────────────────────── */
 const STORAGE_KEYS = {
@@ -95,6 +100,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUserIdMemory(user?.id ?? null);
   }, [user?.id]);
 
+  useEffect(() => {
+    syncCallSocketWithAuth(isAuthenticated, accessToken);
+  }, [isAuthenticated, accessToken]);
+
   const loginWithOtp = useCallback(
     async (
       phoneNumber: string,
@@ -159,6 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     disconnectChatSocket();
+    disconnectCallSocket();
     try {
       await AsyncStorage.multiRemove([
         STORAGE_KEYS.USER,
@@ -185,6 +195,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAccessToken(token);
     setAccessTokenMemory(token);
     reconnectChatSocketWithToken(token);
+    reconnectCallSocketWithToken(token);
   }, []);
 
   const value = useMemo<AuthContextValue>(
