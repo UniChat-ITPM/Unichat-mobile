@@ -12,16 +12,9 @@ import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { scrollPaddingAboveMainTabBar } from '../../theme/layout';
+import type { CallLogEntry } from '../../types/callLog';
 
-export type CallLogEntry = {
-  id: string;
-  name: string;
-  direction: 'incoming' | 'outgoing';
-  isVideo?: boolean;
-  timeLabel: string;
-  streakCount?: number;
-  avatarColor?: string;
-};
+export type { CallLogEntry };
 
 export type CallsShortcutContact = {
   id: string;
@@ -156,12 +149,7 @@ const CallsMainView = ({
   onCallInfo,
   onCallLogPress,
 }: CallsMainViewProps) => {
-  const contact = shortcutContact ?? {
-    id: 'shortcut',
-    name: 'Chuty',
-    subtitle: 'Miss you! ',
-    avatarColor: '#FBCFE8',
-  };
+  const contact = shortcutContact;
 
   return (
     <FlatList
@@ -214,12 +202,14 @@ const CallsMainView = ({
               label="Keypad"
               onPress={() => onQuickAction?.('keypad')}
             />
-            <QuickActionChip
-              label={contact.subtitle ? `${contact.subtitle}\n${contact.name}` : contact.name}
-              avatarLabel={contact.name.trim().charAt(0).toUpperCase() || 'C'}
-              avatarColor={contact.avatarColor}
-              onPress={onShortcutContact}
-            />
+            {contact ? (
+              <QuickActionChip
+                label={contact.subtitle ? `${contact.subtitle}\n${contact.name}` : contact.name}
+                avatarLabel={contact.name.trim().charAt(0).toUpperCase() || 'C'}
+                avatarColor={contact.avatarColor}
+                onPress={onShortcutContact}
+              />
+            ) : null}
             <QuickActionChip
               icon="heart-outline"
               label="Favorite"
@@ -237,11 +227,23 @@ const CallsMainView = ({
           onPress={onCallLogPress ? () => onCallLogPress(item) : undefined}
         />
       )}
+      ListEmptyComponent={
+        <Text style={styles.emptyCalls}>
+          No recent calls. Start a voice or video call from a private chat.
+        </Text>
+      }
     />
   );
 };
 
 const styles = StyleSheet.create({
+  emptyCalls: {
+    paddingVertical: spacing.xl,
+    fontSize: typography.fontSizeMD,
+    color: colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
   list: {
     flex: 1,
   },

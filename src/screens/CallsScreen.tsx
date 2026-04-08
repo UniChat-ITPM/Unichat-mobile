@@ -1,50 +1,11 @@
-import React, { useCallback } from "react";
-import { Alert, StyleSheet } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import CallsMainView, { CallLogEntry } from "../components/calls/CallsMainView";
-import { SCREENS } from "../constants";
-import { colors } from "../theme/colors";
-
-const DEMO_RECENT: CallLogEntry[] = [
-  {
-    id: "1",
-    name: "Dewruwan Edirisinghe",
-    direction: "incoming",
-    timeLabel: "Yesterday",
-    streakCount: 2,
-    avatarColor: "#E0E7FF",
-  },
-  {
-    id: "2",
-    name: "Chuty",
-    direction: "outgoing",
-    isVideo: true,
-    timeLabel: "17:10",
-    avatarColor: "#FCE7F3",
-  },
-  {
-    id: "3",
-    name: "Kasun Perera",
-    direction: "incoming",
-    timeLabel: "16:02",
-    avatarColor: "#DBEAFE",
-  },
-  {
-    id: "4",
-    name: "Amaya",
-    direction: "outgoing",
-    timeLabel: "Wed",
-    avatarColor: "#E0F2FE",
-  },
-  {
-    id: "5",
-    name: "Uni Study Group",
-    direction: "incoming",
-    isVideo: true,
-    timeLabel: "12 Mar",
-    avatarColor: "#DDD6FE",
-  },
-];
+import React, { useCallback, useState } from 'react';
+import { Alert, StyleSheet } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import CallsMainView from '../components/calls/CallsMainView';
+import { getCallLogEntries } from '../services/callLogStorage';
+import type { CallLogEntry } from '../types/callLog';
+import { colors } from '../theme/colors';
 
 const CallsScreen = ({
   navigation,
@@ -56,66 +17,43 @@ const CallsScreen = ({
   };
 }) => {
   const showBack = navigation.canGoBack();
+  const [recentCalls, setRecentCalls] = useState<CallLogEntry[]>([]);
 
-  const openDemoCall = useCallback(
-    (entry: CallLogEntry) => {
-      navigation.navigate(SCREENS.CALL, {
-        mode: entry.isVideo ? "video" : "voice",
-        peerName: entry.name,
-        avatarColor: entry.avatarColor,
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      void getCallLogEntries().then((rows) => {
+        if (active) {
+          setRecentCalls(rows);
+        }
       });
-    },
-    [navigation],
+      return () => {
+        active = false;
+      };
+    }, []),
   );
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top"]}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <CallsMainView
-        recentCalls={DEMO_RECENT}
-        shortcutContact={{
-          id: "shortcut-1",
-          name: "Chuty",
-          avatarColor: "#FBCFE8",
-        }}
+        recentCalls={recentCalls}
+        shortcutContact={null}
         onBack={showBack ? () => navigation.goBack() : undefined}
-        onMore={() =>
+        onMore={() => Alert.alert('More options', 'Coming soon.')}
+        onNewCall={() =>
           Alert.alert(
-            "More options",
-            "Additional call settings will appear here.",
+            'New call',
+            'Open Chats, select a private conversation, then tap the phone or video icon in the top bar.',
           )
         }
-        onNewCall={() =>
-          Alert.alert("New call", "Pick a contact to call (demo).")
-        }
         onQuickAction={(key) => {
-          if (key === "call") {
-            navigation.navigate(SCREENS.CALL, {
-              mode: "voice",
-              peerName: "Chuty",
-              avatarColor: "#FBCFE8",
-            });
-            return;
-          }
           Alert.alert(
-            "Quick action",
-            key === "schedule"
-              ? "Schedule a call (demo)."
-              : key === "keypad"
-                ? "Open dial pad (demo)."
-                : "Favorite contacts (demo).",
+            'Coming soon',
+            key === 'call'
+              ? 'Start a call from a private chat using the header icons.'
+              : 'This action is not available yet.',
           );
         }}
-        onShortcutContact={() =>
-          navigation.navigate(SCREENS.CALL, {
-            mode: "voice",
-            peerName: "Chuty",
-            avatarColor: "#FBCFE8",
-          })
-        }
-        onCallInfo={(entry) =>
-          Alert.alert(entry.name, "View call history details (demo).")
-        }
-        onCallLogPress={openDemoCall}
       />
     </SafeAreaView>
   );

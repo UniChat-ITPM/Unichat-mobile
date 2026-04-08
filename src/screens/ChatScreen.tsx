@@ -55,6 +55,48 @@ import { ChatImageViewer, formatChatImageViewerDate } from '../components/chat/C
 import { SCREENS } from '../constants';
 import { getConversation } from '../services/conversationsApi';
 import { resolveConversationAvatarUrl } from '../utils/conversationPreview';
+import type { ConversationDetailDto } from '../types/conversations';
+
+/** Backend GET /conversations/:id returns `participants[]` with `userId`, not always `participantUserIds`. */
+function participantUserIdsFromDetail(c: ConversationDetailDto): string[] {
+  const rows = c.participants;
+  if (Array.isArray(rows)) {
+    const out: string[] = [];
+    for (const row of rows) {
+      if (row && typeof row === 'object') {
+        const id =
+          typeof row.userId === 'string'
+            ? row.userId
+            : typeof (row as { user?: { id?: string } }).user?.id === 'string'
+              ? (row as { user: { id: string } }).user.id
+              : null;
+        if (id) {
+          out.push(id);
+        }
+      }
+    }
+    if (out.length > 0) {
+      return out;
+    }
+  }
+  const a = c.participantUserIds;
+  const b = c.participantIds;
+  if (Array.isArray(a)) {
+    return a.filter((x): x is string => typeof x === 'string');
+  }
+  if (Array.isArray(b)) {
+    return b.filter((x): x is string => typeof x === 'string');
+  }
+  return [];
+}
+
+function isGroupConversationDetail(c: ConversationDetailDto, routeIsGroup?: boolean): boolean {
+  const t = typeof c.type === 'string' ? c.type.toUpperCase() : '';
+  if (t === 'GROUP') {
+    return true;
+  }
+  return Boolean(c.isGroup ?? routeIsGroup);
+}
 
 export type ChatScreenParams = {
   name: string;
@@ -275,10 +317,12 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
   const conversationId = params?.conversationId;
   const statusLine = params?.status ?? 'last seen today at 12:56';
   const backUnread = params?.unreadBackHrefCount;
-  const { user } = useAuth();
+  const { user, accessToken } = useAuth();
 
   const [threadTitle, setThreadTitle] = useState(paramTitle);
   const [threadImageUrl, setThreadImageUrl] = useState<string | null>(paramImageUrl);
+  /** Other participant in a 1:1 thread (for WebRTC signaling). */
+  const [dmPeerUserId, setDmPeerUserId] = useState<string | null>(null);
 
   useEffect(() => {
     setThreadTitle(paramTitle);
@@ -300,6 +344,15 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
             setThreadTitle(name);
           }
           setThreadImageUrl(resolveConversationAvatarUrl(c, user?.id));
+          const ids = participantUserIdsFromDetail(c);
+          const mine = user?.id;
+          const isGroupChat = isGroupConversationDetail(c, params?.isGroup);
+          if (ids.length > 0 && mine && !isGroupChat) {
+            const other = ids.find((id) => id !== mine);
+            setDmPeerUserId(other ?? null);
+          } else {
+            setDmPeerUserId(null);
+          }
         } catch {
           /* keep header from route / last good fetch */
         }
@@ -307,7 +360,7 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
       return () => {
         cancelled = true;
       };
-    }, [conversationId, user?.id]),
+    }, [conversationId, user?.id, params?.isGroup]),
   );
 
   useFocusEffect(
@@ -326,6 +379,50 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
 
   const title = threadTitle;
   const headerPeerImageUrl = threadImageUrl;
+
+  const startPrivateCall = useCallback(
+    async (mode: 'voice' | 'video') => {
+      if (!accessToken) {
+        Alert.alert('Call', 'Sign in to place a call.');
+        return;
+      }
+      if (!conversationId) {
+        Alert.alert('Call', 'Open a saved conversation to call.');
+        return;
+      }
+      let peer = dmPeerUserId;
+      if (!peer) {
+        try {
+          const c = await getConversation(conversationId);
+          if (isGroupConversationDetail(c, params?.isGroup)) {
+            Alert.alert('Call', 'Group calls are not supported yet.');
+            return;
+          }
+          const mine = user?.id;
+          const ids = participantUserIdsFromDetail(c);
+          if (!mine || ids.length === 0) {
+            Alert.alert('Call', 'Could not resolve participants for this chat.');
+            return;
+          }
+          peer = ids.find((id) => id !== mine) ?? null;
+        } catch {
+          Alert.alert('Call', 'Could not load this conversation.');
+          return;
+        }
+      }
+      if (!peer) {
+        Alert.alert('Call', 'Could not find the other person in this chat.');
+        return;
+      }
+      navigation.navigate(SCREENS.CALL, {
+        mode,
+        peerName: title,
+        avatarColor: colors.dotInactive,
+        peerUserId: peer,
+      });
+    },
+    [accessToken, conversationId, dmPeerUserId, user?.id, params?.isGroup, navigation, title],
+  );
 
   const messageMapContext = useMemo<MessageMapContext>(
     () => ({ peerDisplayName: title }),
@@ -1547,28 +1644,16 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
               <TouchableOpacity
                 style={styles.headerIconBtn}
                 activeOpacity={0.85}
-                onPress={() =>
-                  navigation.navigate(SCREENS.CALL, {
-                    mode: 'video',
-                    peerName: title,
-                    avatarColor: colors.dotInactive,
-                  })
-                }
-                accessibilityLabel="Video call demo"
+                onPress={() => void startPrivateCall('video')}
+                accessibilityLabel="Video call"
               >
                 <Ionicons name="videocam-outline" size={22} color={colors.textPrimary} />
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.headerIconBtn}
                 activeOpacity={0.85}
-                onPress={() =>
-                  navigation.navigate(SCREENS.CALL, {
-                    mode: 'voice',
-                    peerName: title,
-                    avatarColor: colors.dotInactive,
-                  })
-                }
-                accessibilityLabel="Voice call demo"
+                onPress={() => void startPrivateCall('voice')}
+                accessibilityLabel="Voice call"
               >
                 <Ionicons name="call-outline" size={20} color={colors.textPrimary} />
               </TouchableOpacity>
