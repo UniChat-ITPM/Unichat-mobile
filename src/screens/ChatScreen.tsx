@@ -33,6 +33,7 @@ import { typography } from '../theme/typography';
 import { useAuth } from '../context/AuthContext';
 import { useChatSocket } from '../hooks/useChatSocket';
 import type { JoinConversationFailure, RealtimeEnvelope } from '../types/realtime';
+import { extractErrorMessage } from '../services/api';
 import {
   deleteMessage,
   fetchConversationMessages,
@@ -41,6 +42,8 @@ import {
   postTextMessage,
   uploadAndSendChatMedia,
 } from '../services/messagesApi';
+import { convertSinglishToSinhala } from '../services/singlishConversionApi';
+import { getSinglishToSinhalaEnabled } from '../preferences/chatPreferences';
 import {
   loadCachedMessagesRaw,
   prependMessageDtoToCache,
@@ -307,6 +310,20 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
     }, [conversationId, user?.id]),
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      void getSinglishToSinhalaEnabled().then((v) => {
+        if (!cancelled) {
+          setSinglishToSinhala(v);
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
+
   const title = threadTitle;
   const headerPeerImageUrl = threadImageUrl;
 
@@ -335,6 +352,8 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
   const [contactPickVisible, setContactPickVisible] = useState(false);
   const [contactsLoaded, setContactsLoaded] = useState<Contacts.ExistingContact[]>([]);
   const [isRecording, setIsRecording] = useState(false);
+  const [singlishToSinhala, setSinglishToSinhala] = useState(false);
+  const [convertingOutgoing, setConvertingOutgoing] = useState(false);
   const [recordDurationMs, setRecordDurationMs] = useState(0);
   const [voiceActiveId, setVoiceActiveId] = useState<string | null>(null);
   const [voiceIsPlaying, setVoiceIsPlaying] = useState(false);
@@ -1082,8 +1101,24 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
   );
 
   const handleSend = useCallback(async () => {
-    const text = draft.trim();
-    if (!text) {
+    const rawText = draft.trim();
+    if (!rawText) {
+      return;
+    }
+    let text = rawText;
+    if (singlishToSinhala) {
+      try {
+        setConvertingOutgoing(true);
+        text = await convertSinglishToSinhala(rawText);
+      } catch (e) {
+        Alert.alert('Could not convert Singlish', extractErrorMessage(e as never));
+        return;
+      } finally {
+        setConvertingOutgoing(false);
+      }
+    }
+    if (!text.trim()) {
+      Alert.alert('Could not convert Singlish', 'The conversion returned an empty message.');
       return;
     }
     const now = new Date();
@@ -1164,7 +1199,7 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
     ]);
     setDraft('');
     setReplyTarget(null);
-  }, [draft, replyTarget, title, conversationId, user?.id, messageMapContext]);
+  }, [draft, replyTarget, title, conversationId, user?.id, messageMapContext, singlishToSinhala]);
 
   const handleScroll = useCallback((e: { nativeEvent: { contentOffset: { y: number }; layoutMeasurement: { height: number }; contentSize: { height: number } } }) => {
     const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
@@ -1696,10 +1731,15 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
                 style={styles.composerCircleButton}
                 onPress={handleSend}
                 activeOpacity={0.85}
+                disabled={convertingOutgoing}
                 accessibilityRole="button"
                 accessibilityLabel="Send message"
               >
-                <Ionicons name="send" size={22} color={colors.textLight} style={styles.sendIcon} />
+                {convertingOutgoing ? (
+                  <ActivityIndicator color={colors.textLight} size="small" />
+                ) : (
+                  <Ionicons name="send" size={22} color={colors.textLight} style={styles.sendIcon} />
+                )}
               </TouchableOpacity>
             ) : (
               <TouchableOpacity

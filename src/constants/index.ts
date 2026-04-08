@@ -17,6 +17,7 @@ export const SCREENS = {
   ACCOUNT_SETTINGS: 'AccountSettings',
   PRIVACY_SAFETY: 'PrivacySafety',
   NOTIFICATIONS_SETTINGS: 'NotificationsSettings',
+  SINGLISH_CONVERSION: 'SinglishConversion',
   STORAGE_DATA: 'StorageData',
   HELP_SUPPORT: 'HelpSupport',
   EDIT_PROFILE: 'EditProfile',

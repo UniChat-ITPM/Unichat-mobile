@@ -9,6 +9,7 @@ import SettingsScreen from '../screens/SettingsScreen';
 import AccountSettingsScreen from '../screens/AccountSettingsScreen';
 import PrivacySafetyScreen from '../screens/PrivacySafetyScreen';
 import NotificationsSettingsScreen from '../screens/NotificationsSettingsScreen';
+import SinglishConversionScreen from '../screens/SinglishConversionScreen';
 import StorageDataScreen from '../screens/StorageDataScreen';
 import HelpSupportScreen from '../screens/HelpSupportScreen';
 import EditProfileScreen from '../screens/EditProfileScreen';
@@ -46,6 +47,10 @@ function SettingsStackScreen() {
       <SettingsStackNav.Screen
         name={SCREENS.NOTIFICATIONS_SETTINGS}
         component={NotificationsSettingsScreen}
+      />
+      <SettingsStackNav.Screen
+        name={SCREENS.SINGLISH_CONVERSION}
+        component={SinglishConversionScreen}
       />
       <SettingsStackNav.Screen name={SCREENS.STORAGE_DATA} component={StorageDataScreen} />
       <SettingsStackNav.Screen name={SCREENS.HELP_SUPPORT} component={HelpSupportScreen} />

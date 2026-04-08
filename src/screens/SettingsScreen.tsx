@@ -111,6 +111,13 @@ const SettingsScreen = ({ navigation }) => {
           />
           <View style={styles.divider} />
           <SettingsRow
+            icon="language-outline"
+            title="Singlish typing"
+            subtitle="Romanized input → Sinhala Unicode in chat"
+            onPress={() => navigation.navigate(SCREENS.SINGLISH_CONVERSION)}
+          />
+          <View style={styles.divider} />
+          <SettingsRow
             icon="server-outline"
             title="Storage & Data"
             subtitle="Media storage, clear cache"
