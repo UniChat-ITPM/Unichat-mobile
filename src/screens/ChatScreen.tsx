@@ -42,6 +42,7 @@ import {
   postTextMessage,
   uploadAndSendChatMedia,
 } from '../services/messagesApi';
+import { getBlockStatus } from '../services/moderationApi';
 import { convertSinglishToSinhala } from '../services/singlishConversionApi';
 import { getSinglishToSinhalaEnabled } from '../preferences/chatPreferences';
 import {
@@ -55,40 +56,8 @@ import { ChatImageViewer, formatChatImageViewerDate } from '../components/chat/C
 import { SCREENS } from '../constants';
 import { getConversation } from '../services/conversationsApi';
 import { resolveConversationAvatarUrl } from '../utils/conversationPreview';
+import { participantUserIdsFromDetail } from '../utils/conversationParticipants';
 import type { ConversationDetailDto } from '../types/conversations';
-
-/** Backend GET /conversations/:id returns `participants[]` with `userId`, not always `participantUserIds`. */
-function participantUserIdsFromDetail(c: ConversationDetailDto): string[] {
-  const rows = c.participants;
-  if (Array.isArray(rows)) {
-    const out: string[] = [];
-    for (const row of rows) {
-      if (row && typeof row === 'object') {
-        const id =
-          typeof row.userId === 'string'
-            ? row.userId
-            : typeof (row as { user?: { id?: string } }).user?.id === 'string'
-              ? (row as { user: { id: string } }).user.id
-              : null;
-        if (id) {
-          out.push(id);
-        }
-      }
-    }
-    if (out.length > 0) {
-      return out;
-    }
-  }
-  const a = c.participantUserIds;
-  const b = c.participantIds;
-  if (Array.isArray(a)) {
-    return a.filter((x): x is string => typeof x === 'string');
-  }
-  if (Array.isArray(b)) {
-    return b.filter((x): x is string => typeof x === 'string');
-  }
-  return [];
-}
 
 function isGroupConversationDetail(c: ConversationDetailDto, routeIsGroup?: boolean): boolean {
   const t = typeof c.type === 'string' ? c.type.toUpperCase() : '';
@@ -323,6 +292,15 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
   const [threadImageUrl, setThreadImageUrl] = useState<string | null>(paramImageUrl);
   /** Other participant in a 1:1 thread (for WebRTC signaling). */
   const [dmPeerUserId, setDmPeerUserId] = useState<string | null>(null);
+  const [dmPeerBlock, setDmPeerBlock] = useState<{
+    haveIBlockedThem: boolean;
+    amIBlockedByThem: boolean;
+  } | null>(null);
+
+  const dmMessagingBlocked = Boolean(
+    dmPeerBlock && (dmPeerBlock.haveIBlockedThem || dmPeerBlock.amIBlockedByThem),
+  );
+  const dmComposerLocked = Boolean(conversationId && !params?.isGroup && dmMessagingBlocked);
 
   useEffect(() => {
     setThreadTitle(paramTitle);
@@ -377,6 +355,47 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
     }, []),
   );
 
+  const refreshDmPeerBlock = useCallback(async () => {
+    if (!conversationId || params?.isGroup || !user?.id) {
+      setDmPeerBlock(null);
+      return;
+    }
+    let peer: string | null = dmPeerUserId;
+    if (!peer) {
+      try {
+        const c = await getConversation(conversationId);
+        if (isGroupConversationDetail(c, params?.isGroup)) {
+          setDmPeerBlock(null);
+          return;
+        }
+        const ids = participantUserIdsFromDetail(c);
+        peer = ids.find((id) => id !== user.id) ?? null;
+      } catch {
+        setDmPeerBlock(null);
+        return;
+      }
+    }
+    if (!peer) {
+      setDmPeerBlock(null);
+      return;
+    }
+    try {
+      const s = await getBlockStatus(peer);
+      setDmPeerBlock({
+        haveIBlockedThem: s.haveIBlockedThem,
+        amIBlockedByThem: s.amIBlockedByThem,
+      });
+    } catch {
+      setDmPeerBlock(null);
+    }
+  }, [conversationId, params?.isGroup, user?.id, dmPeerUserId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshDmPeerBlock();
+    }, [refreshDmPeerBlock]),
+  );
+
   const title = threadTitle;
   const headerPeerImageUrl = threadImageUrl;
 
@@ -414,6 +433,13 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
         Alert.alert('Call', 'Could not find the other person in this chat.');
         return;
       }
+      if (dmMessagingBlocked) {
+        Alert.alert(
+          'Call unavailable',
+          'You cannot call while messaging is blocked with this user.',
+        );
+        return;
+      }
       navigation.navigate(SCREENS.CALL, {
         mode,
         peerName: title,
@@ -421,7 +447,16 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
         peerUserId: peer,
       });
     },
-    [accessToken, conversationId, dmPeerUserId, user?.id, params?.isGroup, navigation, title],
+    [
+      accessToken,
+      conversationId,
+      dmPeerUserId,
+      user?.id,
+      params?.isGroup,
+      navigation,
+      title,
+      dmMessagingBlocked,
+    ],
   );
 
   const messageMapContext = useMemo<MessageMapContext>(
@@ -685,6 +720,7 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
       conversationId: conversationId,
       isGroup: params?.isGroup,
       imageUrl: headerPeerImageUrl,
+      peerUserId: dmPeerUserId ?? undefined,
     });
   }, [
     navigation,
@@ -694,6 +730,7 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
     conversationId,
     params?.isGroup,
     headerPeerImageUrl,
+    dmPeerUserId,
   ]);
 
   const inputRef = useRef<TextInput>(null);
@@ -947,6 +984,10 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
         Alert.alert('Chat', 'Open a conversation first.');
         return;
       }
+      if (dmMessagingBlocked) {
+        Alert.alert('Cannot send', 'Messaging is blocked in this chat.');
+        return;
+      }
       const reply = replyTarget;
       const quote: Quote | undefined = reply
         ? {
@@ -1017,7 +1058,7 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
         Alert.alert('Could not send', messagesErrorMessage(e));
       }
     },
-    [conversationId, user?.id, messageMapContext, replyTarget, title],
+    [conversationId, user?.id, messageMapContext, replyTarget, title, dmMessagingBlocked],
   );
 
   const stopRecordingAndSend = useCallback(async () => {
@@ -1096,13 +1137,25 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
   const onMicPress = useCallback(() => {
     if (isRecording) {
       void stopRecordingAndSend();
+    } else if (dmComposerLocked) {
+      Alert.alert(
+        'Cannot send',
+        'Messaging is blocked in this chat. Open contact info to unblock if you blocked this user.',
+      );
     } else {
       void startRecording();
     }
-  }, [isRecording, startRecording, stopRecordingAndSend]);
+  }, [isRecording, startRecording, stopRecordingAndSend, dmComposerLocked]);
 
   const handlePickPhoto = useCallback(async () => {
     setShowAttachSheet(false);
+    if (dmComposerLocked) {
+      Alert.alert(
+        'Cannot send',
+        'Messaging is blocked in this chat. Open contact info to unblock if you blocked this user.',
+      );
+      return;
+    }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (perm.status !== 'granted') {
       Alert.alert('Photos', 'Allow photo library access to attach images.');
@@ -1123,10 +1176,17 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
       mimeType: prepared.mimeType,
       localImageUri: prepared.uri,
     });
-  }, [sendUploadedMedia]);
+  }, [sendUploadedMedia, dmComposerLocked]);
 
   const handleTakeCamera = useCallback(async () => {
     setShowAttachSheet(false);
+    if (dmComposerLocked) {
+      Alert.alert(
+        'Cannot send',
+        'Messaging is blocked in this chat. Open contact info to unblock if you blocked this user.',
+      );
+      return;
+    }
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (perm.status !== 'granted') {
       Alert.alert('Camera', 'Allow camera access to take photos.');
@@ -1144,10 +1204,17 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
       mimeType: prepared.mimeType,
       localImageUri: prepared.uri,
     });
-  }, [sendUploadedMedia]);
+  }, [sendUploadedMedia, dmComposerLocked]);
 
   const handlePickDocument = useCallback(async () => {
     setShowAttachSheet(false);
+    if (dmComposerLocked) {
+      Alert.alert(
+        'Cannot send',
+        'Messaging is blocked in this chat. Open contact info to unblock if you blocked this user.',
+      );
+      return;
+    }
     const res = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
     if (res.canceled || !res.assets?.[0]) {
       return;
@@ -1163,10 +1230,17 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
         docSizeBytes: typeof a.size === 'number' ? a.size : undefined,
       },
     });
-  }, [sendUploadedMedia]);
+  }, [sendUploadedMedia, dmComposerLocked]);
 
   const openContactPicker = useCallback(async () => {
     setShowAttachSheet(false);
+    if (dmComposerLocked) {
+      Alert.alert(
+        'Cannot send',
+        'Messaging is blocked in this chat. Open contact info to unblock if you blocked this user.',
+      );
+      return;
+    }
     const perm = await Contacts.requestPermissionsAsync();
     if (perm.status !== 'granted') {
       Alert.alert('Contacts', 'Allow contacts access to share a contact.');
@@ -1184,22 +1258,37 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
     }
     setContactsLoaded(data);
     setContactPickVisible(true);
-  }, []);
+  }, [dmComposerLocked]);
 
   const sendContactAsMessage = useCallback(
     (c: Contacts.ExistingContact) => {
+      if (dmComposerLocked) {
+        Alert.alert(
+          'Cannot send',
+          'Messaging is blocked in this chat. Open contact info to unblock if you blocked this user.',
+        );
+        setContactPickVisible(false);
+        return;
+      }
       const name = [c.firstName, c.lastName].filter(Boolean).join(' ') || 'Contact';
       const phone = c.phoneNumbers?.[0]?.number ?? '';
       const body = phone ? `${name}\n${phone}` : name;
       setContactPickVisible(false);
       pushOutgoing({ body, contactName: name, contactPhone: phone || undefined });
     },
-    [pushOutgoing],
+    [pushOutgoing, dmComposerLocked],
   );
 
   const handleSend = useCallback(async () => {
     const rawText = draft.trim();
     if (!rawText) {
+      return;
+    }
+    if (conversationId && dmMessagingBlocked) {
+      Alert.alert(
+        'Cannot send',
+        'Messaging is blocked in this chat. Open contact info to unblock if you blocked this user.',
+      );
       return;
     }
     let text = rawText;
@@ -1296,7 +1385,7 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
     ]);
     setDraft('');
     setReplyTarget(null);
-  }, [draft, replyTarget, title, conversationId, user?.id, messageMapContext, singlishToSinhala]);
+  }, [draft, replyTarget, title, conversationId, user?.id, messageMapContext, singlishToSinhala, dmMessagingBlocked]);
 
   const handleScroll = useCallback((e: { nativeEvent: { contentOffset: { y: number }; layoutMeasurement: { height: number }; contentSize: { height: number } } }) => {
     const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
@@ -1763,6 +1852,18 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
             </View>
           ) : null}
 
+          {dmComposerLocked ? (
+            <View style={styles.dmBlockBanner}>
+              <Text style={styles.dmBlockBannerText}>
+                {dmPeerBlock?.haveIBlockedThem && !dmPeerBlock?.amIBlockedByThem
+                  ? 'You blocked this user. Open contact info to unblock.'
+                  : dmPeerBlock?.amIBlockedByThem && !dmPeerBlock?.haveIBlockedThem
+                    ? 'This user blocked you.'
+                    : 'Messaging is blocked between you.'}
+              </Text>
+            </View>
+          ) : null}
+
           <View style={styles.composerWrap}>
             {showAttachSheet ? (
               <TouchableOpacity
@@ -1781,6 +1882,13 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
                 style={styles.composerPlus}
                 activeOpacity={0.85}
                 onPress={() => {
+                  if (dmComposerLocked) {
+                    Alert.alert(
+                      'Cannot send',
+                      'Messaging is blocked in this chat. Open contact info to unblock if you blocked this user.',
+                    );
+                    return;
+                  }
                   Keyboard.dismiss();
                   setShowAttachSheet(true);
                 }}
@@ -1799,6 +1907,7 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
                 placeholderTextColor={colors.textMuted}
                 style={styles.composerInput}
                 multiline
+                editable={!dmComposerLocked}
               />
             </View>
 
@@ -2259,6 +2368,19 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 6,
     elevation: 3,
+  },
+  dmBlockBanner: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: 'rgba(220, 38, 38, 0.08)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  dmBlockBannerText: {
+    fontSize: typography.fontSizeSM,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
   },
   composerWrap: {
     flexDirection: 'row',
