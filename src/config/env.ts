@@ -6,12 +6,16 @@ interface EnvConfig {
   API_BASE_URL: string;
   /** Socket.IO handshake URL (no `/api` path). Often a dedicated realtime port in dev. */
   REALTIME_BASE_URL: string;
+  /** Singlish → Sinhala Flask service (no `/api` prefix). */
+  SINGLISH_CONVERSION_BASE_URL: string;
   REQUEST_TIMEOUT: number;
 }
 
 type ManifestExtra = {
   apiBaseUrl?: string;
   realtimeBaseUrl?: string;
+  /** Override Singlish conversion service origin, e.g. `http://192.168.1.5:5050` */
+  singlishConversionBaseUrl?: string;
   /** PC LAN IPv4 for physical devices when Metro uses a tunnel URL (`*.exp.direct`, ngrok). Not used when Metro is `localhost` (simulator / same machine). */
   devLanHost?: string;
   releaseChannel?: string;
@@ -112,21 +116,30 @@ function getDevRealtimeUrl(): string {
   return `http://${h}:8228`;
 }
 
+function getDevSinglishConversionUrl(): string {
+  const h = resolveDevBackendHost();
+  return `http://${h}:5050`;
+}
+
 const ENV_CONFIGS: Record<Environment, EnvConfig> = {
   development: {
     API_BASE_URL: getDevApiUrl(),
     REALTIME_BASE_URL: getDevRealtimeUrl(),
+    SINGLISH_CONVERSION_BASE_URL: getDevSinglishConversionUrl(),
     // Local stack (gateway → otp → WhatsApp / auth / RabbitMQ) often needs >15s on first call.
     REQUEST_TIMEOUT: 60_000,
   },
   staging: {
     API_BASE_URL: 'https://staging-api.unichat.app/api',
     REALTIME_BASE_URL: 'https://staging-api.unichat.app',
+    /** Deploy the Flask converter on this host:port, or override via `expo.extra.singlishConversionBaseUrl`. */
+    SINGLISH_CONVERSION_BASE_URL: 'https://staging-api.unichat.app:5050',
     REQUEST_TIMEOUT: 15_000,
   },
   production: {
     API_BASE_URL: 'https://api.unichat.app/api',
     REALTIME_BASE_URL: 'https://api.unichat.app',
+    SINGLISH_CONVERSION_BASE_URL: 'https://api.unichat.app:5050',
     REQUEST_TIMEOUT: 10_000,
   },
 };
@@ -176,3 +189,12 @@ export const REALTIME_BASE_URL_RESOLVED =
   extra?.realtimeBaseUrl && extra.realtimeBaseUrl.length > 0
     ? extra.realtimeBaseUrl.replace(/\/$/, '')
     : ENV.REALTIME_BASE_URL;
+
+/**
+ * Singlish conversion Flask service (origin only). Override: `expo.extra.singlishConversionBaseUrl`.
+ * Development default uses the same resolved host as the REST API, port 5050.
+ */
+export const SINGLISH_CONVERSION_BASE_URL_RESOLVED =
+  extra?.singlishConversionBaseUrl && extra.singlishConversionBaseUrl.length > 0
+    ? extra.singlishConversionBaseUrl.replace(/\/$/, '')
+    : ENV.SINGLISH_CONVERSION_BASE_URL;
