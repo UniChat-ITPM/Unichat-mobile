@@ -35,6 +35,11 @@ export type ParticipantProfileViewProps = {
   onDeleteChat: () => void;
   onBlockUser: () => void;
   onReportAndBlock: () => void;
+  /** 1:1: you blocked this user — show Unblock instead of Block */
+  haveIBlockedThem?: boolean;
+  /** 1:1: this user blocked you */
+  theyBlockedMe?: boolean;
+  onUnblockUser?: () => void;
 };
 
 function MenuRow({
@@ -134,6 +139,9 @@ export function ParticipantProfileView({
   onDeleteChat,
   onBlockUser,
   onReportAndBlock,
+  haveIBlockedThem = false,
+  theyBlockedMe = false,
+  onUnblockUser,
 }: ParticipantProfileViewProps) {
   const initial = participantName.trim().charAt(0).toUpperCase() || '?';
   const mediaRight = mediaCount > 0 ? String(mediaCount) : undefined;
@@ -174,6 +182,9 @@ export function ParticipantProfileView({
             <Text style={styles.subtitle} numberOfLines={2}>
               {subtitle}
             </Text>
+          ) : null}
+          {!isGroup && theyBlockedMe ? (
+            <Text style={styles.blockStatusHint}>This user blocked you. You cannot send them messages.</Text>
           ) : null}
         </View>
 
@@ -222,22 +233,38 @@ export function ParticipantProfileView({
             valueRight={undefined}
             showChevron={false}
           />
-          <View style={styles.divider} />
-          <MenuRow
-            icon="remove-circle-outline"
-            label="Block user"
-            onPress={onBlockUser}
-            destructive
-            showChevron={false}
-          />
-          <View style={styles.divider} />
-          <MenuRow
-            icon="flag-outline"
-            label="Report and block user"
-            onPress={onReportAndBlock}
-            destructive
-            showChevron={false}
-          />
+          {!isGroup ? (
+            haveIBlockedThem ? (
+              <>
+                <View style={styles.divider} />
+                <MenuRow
+                  icon="checkmark-circle-outline"
+                  label="Unblock user"
+                  onPress={onUnblockUser ?? (() => {})}
+                  showChevron={false}
+                />
+              </>
+            ) : (
+              <>
+                <View style={styles.divider} />
+                <MenuRow
+                  icon="remove-circle-outline"
+                  label="Block user"
+                  onPress={onBlockUser}
+                  destructive
+                  showChevron={false}
+                />
+                <View style={styles.divider} />
+                <MenuRow
+                  icon="flag-outline"
+                  label="Report and block user"
+                  onPress={onReportAndBlock}
+                  destructive
+                  showChevron={false}
+                />
+              </>
+            )
+          ) : null}
         </View>
       </ScrollView>
     </View>
@@ -334,6 +361,13 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizeMD,
     color: colors.textSecondary,
     textAlign: 'center',
+  },
+  blockStatusHint: {
+    marginTop: spacing.md,
+    fontSize: typography.fontSizeSM,
+    color: colors.error,
+    textAlign: 'center',
+    lineHeight: 20,
   },
   card: {
     marginHorizontal: spacing.md,
