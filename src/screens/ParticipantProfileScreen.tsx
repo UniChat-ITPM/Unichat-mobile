@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import type { AxiosError } from 'axios';
 import { Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,7 +9,7 @@ import { colors } from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 import { extractErrorMessage } from '../services/api';
 import type { ApiErrorBody } from '../types/auth';
-import { getConversation } from '../services/conversationsApi';
+import { getConversation, removeConversationParticipant } from '../services/conversationsApi';
 import { blockUser, getBlockStatus, unblockUser } from '../services/moderationApi';
 import type { GroupMemberListItem } from '../types/groupMember';
 import { mapParticipantsToGroupMemberList } from '../utils/groupMembers';
@@ -124,9 +124,65 @@ const ParticipantProfileScreen = ({
     }, [refreshPeerBlockStatus]),
   );
 
+  const selfGroupRole = useMemo(
+    () => groupMembers.find((m) => m.isSelf)?.role ?? null,
+    [groupMembers],
+  );
+  const canManageMembers =
+    selfGroupRole?.toUpperCase() === 'OWNER' || selfGroupRole?.toUpperCase() === 'ADMIN';
+
+  const refreshGroupMembers = useCallback(async () => {
+    if (!isGroup || !conversationId) return;
+    try {
+      const c = await getConversation(conversationId);
+      setGroupMembers(mapParticipantsToGroupMemberList(c.participants, user?.id));
+    } catch {
+      setGroupMembers([]);
+    }
+  }, [isGroup, conversationId, user?.id]);
+
+  const onAddGroupMembers = useCallback(() => {
+    if (!conversationId) return;
+    navigation.navigate(SCREENS.NEW_CHAT, {
+      addToGroupConversationId: conversationId,
+      existingMemberUserIds: groupMembers.map((m) => m.userId),
+    });
+  }, [conversationId, navigation, groupMembers]);
+
+  const onRemoveGroupMember = useCallback(
+    (targetUserId: string, displayName: string) => {
+      if (!conversationId) return;
+      Alert.alert('Remove this member?', displayName, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              try {
+                await removeConversationParticipant(conversationId, targetUserId);
+                await refreshGroupMembers();
+              } catch (e) {
+                Alert.alert('Could not remove', extractErrorMessage(e as AxiosError<ApiErrorBody>));
+              }
+            })();
+          },
+        },
+      ]);
+    },
+    [conversationId, refreshGroupMembers],
+  );
+
   const onMediaLinksDocs = useCallback(() => {
-    Alert.alert('Media, links, and docs', 'Shared files for this chat will appear here soon.');
-  }, []);
+    if (!conversationId) {
+      Alert.alert('Media, links, and docs', 'Conversation is not available.');
+      return;
+    }
+    navigation.navigate(SCREENS.CONVERSATION_MEDIA, {
+      conversationId,
+      peerDisplayName: participantName,
+    });
+  }, [conversationId, navigation, participantName]);
 
   const onNotification = useCallback(() => {
     navigation.navigate(SCREENS.MAIN, {
@@ -278,6 +334,10 @@ const ParticipantProfileScreen = ({
         isGroup={Boolean(isGroup)}
         groupMembers={groupMembers}
         groupMembersLoading={groupMembersLoading}
+        selfGroupRole={selfGroupRole}
+        canManageMembers={canManageMembers}
+        onAddGroupMembers={isGroup && conversationId ? onAddGroupMembers : undefined}
+        onRemoveGroupMember={isGroup && conversationId ? onRemoveGroupMember : undefined}
         onBack={() => navigation.goBack()}
         onEdit={onEdit}
         onMediaLinksDocs={onMediaLinksDocs}

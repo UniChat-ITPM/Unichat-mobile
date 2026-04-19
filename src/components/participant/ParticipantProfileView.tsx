@@ -28,6 +28,12 @@ export type ParticipantProfileViewProps = {
   isGroup?: boolean;
   groupMembers?: GroupMemberListItem[];
   groupMembersLoading?: boolean;
+  /** Signed-in user's role in this group (for admin actions). */
+  selfGroupRole?: string | null;
+  /** Owner or admin: show add/remove member actions. */
+  canManageMembers?: boolean;
+  onAddGroupMembers?: () => void;
+  onRemoveGroupMember?: (userId: string, displayName: string) => void;
   onBack: () => void;
   onEdit?: () => void;
   onMediaLinksDocs: () => void;
@@ -86,12 +92,20 @@ function MenuRow({
   );
 }
 
-function GroupMemberRow({ item }: { item: GroupMemberListItem }) {
+function GroupMemberRow({
+  item,
+  removable,
+  onPress,
+}: {
+  item: GroupMemberListItem;
+  removable?: boolean;
+  onPress?: () => void;
+}) {
   const initial = item.title.trim().charAt(0).toUpperCase() || '?';
   const remote = item.avatarUrl?.trim();
 
-  return (
-    <View style={styles.memberRow}>
+  const inner = (
+    <>
       <View style={styles.memberAvatar}>
         {remote ? (
           <Image
@@ -120,8 +134,25 @@ function GroupMemberRow({ item }: { item: GroupMemberListItem }) {
           </Text>
         ) : null}
       </View>
-    </View>
+      {removable ? (
+        <Ionicons name="chevron-forward" size={18} color={colors.textMuted} style={{ marginLeft: spacing.sm }} />
+      ) : null}
+    </>
   );
+
+  if (onPress) {
+    return (
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [styles.memberRow, pressed && styles.memberRowPressed]}
+        android_ripple={{ color: 'rgba(79, 70, 229, 0.12)' }}
+      >
+        {inner}
+      </Pressable>
+    );
+  }
+
+  return <View style={styles.memberRow}>{inner}</View>;
 }
 
 export function ParticipantProfileView({
@@ -132,6 +163,10 @@ export function ParticipantProfileView({
   isGroup = false,
   groupMembers = [],
   groupMembersLoading = false,
+  selfGroupRole = null,
+  canManageMembers = false,
+  onAddGroupMembers,
+  onRemoveGroupMember,
   onBack,
   onEdit,
   onMediaLinksDocs,
@@ -147,6 +182,16 @@ export function ParticipantProfileView({
   const mediaRight = mediaCount > 0 ? String(mediaCount) : undefined;
   const remoteAvatar = avatarImageUri?.trim();
   const topTitle = isGroup ? 'Group info' : 'Contact info';
+  const selfRoleUpper = (selfGroupRole ?? 'MEMBER').toUpperCase();
+
+  const memberRemovable = (m: GroupMemberListItem) => {
+    if (!canManageMembers || !onRemoveGroupMember) return false;
+    if (m.isSelf) return false;
+    const r = m.role.toUpperCase();
+    if (r === 'OWNER') return false;
+    if (r === 'ADMIN' && selfRoleUpper !== 'OWNER') return false;
+    return true;
+  };
 
   return (
     <View style={styles.root}>
@@ -192,9 +237,21 @@ export function ParticipantProfileView({
           <View style={[styles.card, styles.cardSpaced]}>
             <View style={styles.membersSectionHeader}>
               <Text style={styles.membersSectionTitle}>Members</Text>
-              {!groupMembersLoading && groupMembers.length > 0 ? (
-                <Text style={styles.membersCount}>{groupMembers.length}</Text>
-              ) : null}
+              <View style={styles.membersHeaderRight}>
+                {!groupMembersLoading && groupMembers.length > 0 ? (
+                  <Text style={styles.membersCount}>{groupMembers.length}</Text>
+                ) : null}
+                {canManageMembers && onAddGroupMembers ? (
+                  <TouchableOpacity
+                    onPress={onAddGroupMembers}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Add members"
+                  >
+                    <Text style={styles.addMembersLink}>Add</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
             </View>
             {groupMembersLoading ? (
               <View style={styles.membersLoading}>
@@ -203,12 +260,23 @@ export function ParticipantProfileView({
             ) : groupMembers.length === 0 ? (
               <Text style={styles.membersEmpty}>No members loaded.</Text>
             ) : (
-              groupMembers.map((m, i) => (
-                <View key={m.userId}>
-                  <GroupMemberRow item={m} />
-                  {i < groupMembers.length - 1 ? <View style={styles.memberDivider} /> : null}
-                </View>
-              ))
+              groupMembers.map((m, i) => {
+                const removable = memberRemovable(m);
+                return (
+                  <View key={m.userId}>
+                    <GroupMemberRow
+                      item={m}
+                      removable={removable}
+                      onPress={
+                        removable
+                          ? () => onRemoveGroupMember?.(m.userId, m.title)
+                          : undefined
+                      }
+                    />
+                    {i < groupMembers.length - 1 ? <View style={styles.memberDivider} /> : null}
+                  </View>
+                );
+              })
             )}
           </View>
         ) : null}
@@ -444,6 +512,16 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontWeight: typography.fontWeightMedium,
   },
+  membersHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  addMembersLink: {
+    fontSize: typography.fontSizeSM,
+    fontWeight: typography.fontWeightSemiBold,
+    color: colors.primary,
+  },
   membersLoading: {
     paddingVertical: spacing.xl,
     alignItems: 'center',
@@ -460,6 +538,9 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     gap: spacing.md,
+  },
+  memberRowPressed: {
+    backgroundColor: colors.surface,
   },
   memberAvatar: {
     width: 44,

@@ -320,7 +320,7 @@ function LoginFormCardBody({
       <View style={styles.divider} />
 
       <Text style={styles.fieldLabel}>Phone Number</Text>
-      <View style={styles.phoneRow}>
+      <View style={[styles.phoneRow, error ? styles.phoneRowError : null]}>
         <View style={styles.countryBadge}>
           <Text style={styles.countryFlag}>{DEFAULT_COUNTRY_FLAG}</Text>
           <Text style={styles.countryCode}>{DEFAULT_COUNTRY_CODE}</Text>
@@ -346,18 +346,23 @@ function LoginFormCardBody({
             maxLength={14}
             style={styles.phoneInput}
             inputWrapperStyle={styles.phoneInputInner}
-            errorText={error}
-            errorSlotMinHeight={
-              Platform.OS === 'android'
-                ? typography.fontSizeXS + spacing.xs + spacing.sm + 6
-                : undefined
-            }
             editable={!loading}
             onFocus={onFocus}
             onBlur={onBlur}
           />
         </View>
       </View>
+
+      {error ? (
+        <View style={styles.errorBanner}>
+          <View style={styles.errorIconWrap}>
+            <Ionicons name="alert-circle" size={14} color={colors.error} />
+          </View>
+          <Text style={styles.errorBannerText} numberOfLines={2}>
+            {error}
+          </Text>
+        </View>
+      ) : null}
 
       <View style={styles.helperRow}>
         <View style={styles.helperIconWrap}>
@@ -508,6 +513,35 @@ const styles = StyleSheet.create({
     height: 28,
     backgroundColor: colors.border,
     alignSelf: 'center',
+  },
+  phoneRowError: {
+    borderColor: colors.error,
+    backgroundColor: `${colors.error}08`,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: `${colors.error}10`,
+    borderRadius: 10,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginTop: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  errorIconWrap: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorBannerText: {
+    flex: 1,
+    color: colors.error,
+    fontSize: typography.fontSizeXS,
+    fontWeight: typography.fontWeightMedium,
+    lineHeight: 16,
   },
   phoneInputWrapper: { flex: 1 },
   phoneInput: { marginBottom: 0 },

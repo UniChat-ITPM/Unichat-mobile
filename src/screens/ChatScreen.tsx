@@ -51,7 +51,12 @@ import {
   saveCachedMessagesRaw,
 } from '../services/chatCache';
 import { mapUnknownMessagePayload, type MessageMapContext } from '../utils/messageMapping';
+import { mediaLinksDocsTotalCount } from '../utils/chatMessageCategorize';
 import { prepareChatImageForUpload } from '../utils/prepareChatImage';
+import {
+  resolveChatUploadLocalFileSizeBytes,
+  validateChatUploadFileSize,
+} from '../utils/validators';
 import { ChatImageViewer, formatChatImageViewerDate } from '../components/chat/ChatImageViewer';
 import { SCREENS } from '../constants';
 import { getConversation } from '../services/conversationsApi';
@@ -91,12 +96,15 @@ type ChatMessage = {
   read?: boolean;
   quote?: Quote;
   imageUri?: string;
+  isVideo?: boolean;
+  videoDurationSec?: number;
   voiceUri?: string;
   voiceDurationSec?: number;
   docName?: string;
   /** MIME type from document picker (e.g. application/pdf) */
   docMimeType?: string;
   docSizeBytes?: number;
+  docUri?: string;
   docPageCount?: number;
   contactName?: string;
   contactPhone?: string;
@@ -707,10 +715,7 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
     };
   }, [conversationId, user?.id, messageMapContext, scrollListToLatest]);
 
-  const mediaLinksDocsCount = useMemo(
-    () => messages.filter((m) => Boolean(m.imageUri || m.docName)).length,
-    [messages],
-  );
+  const mediaLinksDocsCount = useMemo(() => mediaLinksDocsTotalCount(messages), [messages]);
 
   const openParticipantProfile = useCallback(() => {
     navigation.navigate(SCREENS.PARTICIPANT_PROFILE, {
@@ -986,6 +991,15 @@ const ChatScreen = ({ navigation, route }: { navigation: any; route: any }) => {
       }
       if (dmMessagingBlocked) {
         Alert.alert('Cannot send', 'Messaging is blocked in this chat.');
+        return;
+      }
+      const resolvedSize = await resolveChatUploadLocalFileSizeBytes(
+        opts.fileUri,
+        opts.docMeta?.docSizeBytes,
+      );
+      const sizeErr = validateChatUploadFileSize(opts.mimeType, resolvedSize);
+      if (sizeErr) {
+        Alert.alert('Could not send', sizeErr);
         return;
       }
       const reply = replyTarget;

@@ -33,6 +33,7 @@ export const SCREENS = {
   /** Full-screen picker: contacts on UniChat, new group, chat by user id */
   NEW_CHAT: 'NewChat',
   PARTICIPANT_PROFILE: 'ParticipantProfile',
+  CONVERSATION_MEDIA: 'ConversationMedia',
   /** Full-screen call (signaling via call-service; media via WebRTC when added) */
   CALL: 'Call',
 };
