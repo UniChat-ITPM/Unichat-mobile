@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
   Platform,
   Image,
   Alert,
+  Animated,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -32,6 +34,60 @@ import {
 } from '../utils/validators';
 import { ProfileImage, UpdateUserPayload } from '../types/auth';
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+const FloatingOrb = ({
+  size,
+  top,
+  left,
+  delay,
+  opacity,
+}: {
+  size: number;
+  top: number;
+  left: number;
+  delay: number;
+  opacity: number;
+}) => {
+  const translateY = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(translateY, {
+          toValue: -12,
+          duration: 2800,
+          delay,
+          useNativeDriver: true,
+        }),
+        Animated.timing(translateY, {
+          toValue: 0,
+          duration: 2800,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [translateY, delay]);
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        top,
+        left,
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        backgroundColor: `rgba(255, 255, 255, ${opacity})`,
+        transform: [{ translateY }],
+      }}
+    />
+  );
+};
+
 const ProfileSetupScreen = ({ navigation }: any) => {
   const { user, completeAuthentication } = useAuth();
   const existingPhoto = getProfileImageUrl(user);
@@ -46,6 +102,25 @@ const ProfileSetupScreen = ({ navigation }: any) => {
   const [nameError, setNameError] = useState('');
   const [emailError, setEmailError] = useState('');
   const [imageError, setImageError] = useState('');
+
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(40)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        tension: 50,
+        friction: 9,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [fadeAnim, slideAnim]);
 
   const phoneNumber = user?.phoneNumber ?? '';
 
@@ -228,117 +303,172 @@ const ProfileSetupScreen = ({ navigation }: any) => {
     setSetupStep(2);
   };
 
+  const headerTitle =
+    setupStep === 1
+      ? isExistingUser
+        ? 'Your name'
+        : "What's your name?"
+      : isExistingUser
+        ? 'Welcome Back!'
+        : 'Almost there';
+
+  const headerSubtitle =
+    setupStep === 1
+      ? isExistingUser
+        ? 'Update how your name appears. You can use two or more names with a space.'
+        : 'Enter the name others will see. Example: Dumindu Dissanayake'
+      : isExistingUser
+        ? 'Update your email or photo, then continue to your chats'
+        : 'Add your email and optional profile photo';
+
   return (
-    <SafeAreaView style={styles.safe}>
+    <View style={styles.root}>
+      <LinearGradient
+        colors={[colors.gradientStart, colors.secondary, colors.gradientEnd]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.headerGradient}
+      >
+        <FloatingOrb size={120} top={-20} left={-30} delay={0} opacity={0.07} />
+        <FloatingOrb size={80} top={40} left={SCREEN_WIDTH * 0.65} delay={400} opacity={0.09} />
+        <FloatingOrb size={50} top={100} left={SCREEN_WIDTH * 0.2} delay={800} opacity={0.06} />
+        <FloatingOrb size={65} top={10} left={SCREEN_WIDTH * 0.45} delay={200} opacity={0.05} />
+
+        <SafeAreaView style={styles.headerContent}>
+          <View style={styles.headerTopRow}>
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={handleBack}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="arrow-back" size={20} color="#fff" />
+            </TouchableOpacity>
+
+            <View style={styles.stepBadge}>
+              <Ionicons name="sparkles" size={12} color="#fff" />
+              <Text style={styles.stepBadgeText}>Step {setupStep} of 2</Text>
+            </View>
+
+            <View style={{ width: 40 }} />
+          </View>
+
+          <Animated.View
+            style={[
+              styles.headerTextBlock,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }],
+              },
+            ]}
+          >
+            <View style={styles.stepDotsRow}>
+              <View
+                style={[
+                  styles.stepDot,
+                  styles.stepDotHeader,
+                  setupStep === 1 && styles.stepDotActiveHeader,
+                ]}
+              />
+              <View
+                style={[
+                  styles.stepDot,
+                  styles.stepDotHeader,
+                  setupStep === 2 && styles.stepDotActiveHeader,
+                ]}
+              />
+            </View>
+            <Text style={styles.title}>{headerTitle}</Text>
+            <Text style={styles.subtitle}>{headerSubtitle}</Text>
+          </Animated.View>
+        </SafeAreaView>
+      </LinearGradient>
+
       <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.bottomSection}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={0}
       >
         <ScrollView
+          style={styles.scrollView}
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          bounces={false}
         >
-          {/* Back button */}
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={handleBack}
-            disabled={loading}
+          <Animated.View
+            style={[
+              styles.card,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }],
+              },
+            ]}
           >
-            <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
-          </TouchableOpacity>
-
-          {/* Header */}
-          <View style={styles.stepRow}>
-            <View style={[styles.stepDot, setupStep === 1 && styles.stepDotActive]} />
-            <View style={[styles.stepDot, setupStep === 2 && styles.stepDotActive]} />
-          </View>
-          <Text style={styles.stepHint}>Step {setupStep} of 2</Text>
-          <Text style={styles.title}>
-            {setupStep === 1
-              ? isExistingUser
-                ? 'Your name'
-                : "What's your name?"
-              : isExistingUser
-                ? 'Welcome Back!'
-                : 'Almost there'}
-          </Text>
-          <Text style={styles.subtitle}>
-            {setupStep === 1
-              ? isExistingUser
-                ? 'Update how your name appears. You can use two or more names with a space.'
-                : 'Enter the name others will see. Example: Dumindu Dissanayake'
-              : isExistingUser
-                ? 'Update your email or photo, then continue to your chats'
-                : 'Add your email and optional profile photo'}
-          </Text>
-
-          {setupStep === 2 ? (
-          <View style={styles.photoSection}>
-            <TouchableOpacity
-              style={styles.photoWrapper}
-              activeOpacity={0.85}
-              onPress={handlePickImage}
-              disabled={loading}
-            >
-              {selectedImage ? (
-                <Image source={{ uri: selectedImage.uri }} style={styles.photoImage} />
-              ) : existingPhoto ? (
-                <Image source={{ uri: existingPhoto }} style={styles.photoImage} />
-              ) : (
-                <LinearGradient
-                  colors={['#C7D2FE', '#DDD6FE']}
-                  style={styles.photoPlaceholder}
+            {setupStep === 2 ? (
+              <View style={styles.photoSection}>
+                <TouchableOpacity
+                  style={styles.photoWrapper}
+                  activeOpacity={0.85}
+                  onPress={handlePickImage}
+                  disabled={loading}
                 >
-                  <Ionicons name="person" size={56} color={colors.primary} />
-                </LinearGradient>
-              )}
+                  {selectedImage ? (
+                    <Image source={{ uri: selectedImage.uri }} style={styles.photoImage} />
+                  ) : existingPhoto ? (
+                    <Image source={{ uri: existingPhoto }} style={styles.photoImage} />
+                  ) : (
+                    <LinearGradient
+                      colors={['#C7D2FE', '#DDD6FE']}
+                      style={styles.photoPlaceholder}
+                    >
+                      <Ionicons name="person" size={48} color={colors.primary} />
+                    </LinearGradient>
+                  )}
 
-              <LinearGradient
-                colors={[colors.gradientStart, colors.gradientEnd]}
-                style={styles.cameraBadge}
-              >
-                <Ionicons name="camera" size={18} color="#fff" />
-              </LinearGradient>
-            </TouchableOpacity>
+                  <LinearGradient
+                    colors={[colors.gradientStart, colors.gradientEnd]}
+                    style={styles.cameraBadge}
+                  >
+                    <Ionicons name="camera" size={16} color="#fff" />
+                  </LinearGradient>
+                </TouchableOpacity>
 
-            {selectedImage ? (
-              <TouchableOpacity
-                style={styles.photoActionButton}
-                onPress={handleRemoveImage}
-                disabled={loading}
-              >
-                <Text style={[styles.photoActionText, { color: colors.error }]}>
-                  Remove Photo
-                </Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={styles.photoActionButton}
-                onPress={handlePickImage}
-                disabled={loading}
-              >
-                <Text style={styles.photoActionText}>
-                  {existingPhoto ? 'Change Profile Photo' : 'Add Profile Photo'}
-                </Text>
-              </TouchableOpacity>
-            )}
+                {selectedImage ? (
+                  <TouchableOpacity
+                    style={styles.photoActionButton}
+                    onPress={handleRemoveImage}
+                    disabled={loading}
+                  >
+                    <Text style={[styles.photoActionText, { color: colors.error }]}>
+                      Remove Photo
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.photoActionButton}
+                    onPress={handlePickImage}
+                    disabled={loading}
+                  >
+                    <Text style={styles.photoActionText}>
+                      {existingPhoto ? 'Change Profile Photo' : 'Add Profile Photo'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
 
-            {imageError ? (
-              <View style={styles.inlineError}>
-                <Ionicons name="alert-circle" size={14} color={colors.error} />
-                <Text style={styles.inlineErrorText}>{imageError}</Text>
+                {imageError ? (
+                  <View style={styles.inlineError}>
+                    <Ionicons name="alert-circle" size={14} color={colors.error} />
+                    <Text style={styles.inlineErrorText}>{imageError}</Text>
+                  </View>
+                ) : null}
               </View>
             ) : null}
-          </View>
-          ) : null}
 
-          {/* Form card */}
-          <View style={styles.card}>
             {setupStep === 1 ? (
               <>
+                <Text style={styles.fieldLabel}>Full Name</Text>
                 <TextInputField
-                  label="Name"
                   placeholder="e.g. Dumindu Dissanayake"
                   value={displayName}
                   onChangeText={(text: string) => {
@@ -350,9 +480,19 @@ const ProfileSetupScreen = ({ navigation }: any) => {
                   editable={!loading}
                   errorText={nameError}
                   leftElement={
-                    <Ionicons name="person-outline" size={20} color={colors.textMuted} />
+                    <Ionicons name="person-outline" size={20} color={colors.primary} />
                   }
                 />
+
+                <View style={styles.helperRow}>
+                  <View style={styles.helperIconWrap}>
+                    <Ionicons name="shield-checkmark" size={13} color={colors.primary} />
+                  </View>
+                  <Text style={styles.helperText}>
+                    Use 3–50 characters. Letters, numbers, and spaces only.
+                  </Text>
+                </View>
+
                 <PrimaryButton
                   title="Continue"
                   onPress={handleContinueStep1}
@@ -363,9 +503,9 @@ const ProfileSetupScreen = ({ navigation }: any) => {
               </>
             ) : (
               <>
+                <Text style={styles.fieldLabel}>Email Address</Text>
                 <TextInputField
-                  label="Email"
-                  placeholder="Enter your email address"
+                  placeholder="you@example.com"
                   value={email}
                   onChangeText={(text: string) => {
                     setEmail(text);
@@ -377,9 +517,22 @@ const ProfileSetupScreen = ({ navigation }: any) => {
                   editable={!loading}
                   errorText={emailError}
                   leftElement={
-                    <Ionicons name="mail-outline" size={20} color={colors.textMuted} />
+                    <Ionicons name="mail-outline" size={20} color={colors.primary} />
                   }
                 />
+
+                <View style={styles.helperRow}>
+                  <View style={styles.helperIconWrap}>
+                    <Ionicons
+                      name="information-circle"
+                      size={13}
+                      color={colors.primary}
+                    />
+                  </View>
+                  <Text style={styles.helperText}>
+                    Profile photo is optional (max 5 MB)
+                  </Text>
+                </View>
 
                 <PrimaryButton
                   title={
@@ -394,33 +547,21 @@ const ProfileSetupScreen = ({ navigation }: any) => {
                   loading={loading}
                   style={styles.ctaButton}
                 />
-
-                <View style={styles.helperRow}>
-                  <Ionicons
-                    name="information-circle-outline"
-                    size={14}
-                    color={colors.textMuted}
-                  />
-                  <Text style={styles.helperText}>
-                    Profile photo is optional (max 5 MB)
-                  </Text>
-                </View>
               </>
             )}
-          </View>
+          </Animated.View>
 
-          {/* Progress indicator */}
           <View style={styles.progressHint}>
             <View style={styles.progressStep}>
               <View style={[styles.progressDot, styles.progressDotDone]}>
-                <Ionicons name="checkmark" size={12} color="#fff" />
+                <Ionicons name="checkmark" size={13} color="#fff" />
               </View>
               <Text style={styles.progressLabel}>Verify</Text>
             </View>
             <View style={styles.progressLine} />
             <View style={styles.progressStep}>
               <View style={[styles.progressDot, styles.progressDotActive]}>
-                <Ionicons name="person" size={12} color="#fff" />
+                <Ionicons name="person" size={13} color="#fff" />
               </View>
               <Text style={[styles.progressLabel, { color: colors.primary }]}>
                 Profile
@@ -429,93 +570,146 @@ const ProfileSetupScreen = ({ navigation }: any) => {
             <View style={styles.progressLine} />
             <View style={styles.progressStep}>
               <View style={styles.progressDot}>
-                <Ionicons name="chatbubbles" size={12} color={colors.textMuted} />
+                <Ionicons name="chatbubbles" size={13} color={colors.textMuted} />
               </View>
               <Text style={styles.progressLabel}>Chat</Text>
             </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  safe: { flex: 1, backgroundColor: colors.backgroundSecondary },
-  scroll: {
-    flexGrow: 1,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.xl,
+  root: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  headerGradient: {
+    paddingBottom: spacing.xxxl + spacing.xl,
+    overflow: 'hidden',
+  },
+  headerContent: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+  },
+  headerTopRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.lg,
   },
   backBtn: {
-    alignSelf: 'flex-start',
-    width: 44,
-    height: 44,
+    width: 40,
+    height: 40,
     borderRadius: 14,
-    backgroundColor: colors.background,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.xxl,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+  },
+  stepBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderRadius: 20,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+  },
+  stepBadgeText: {
+    color: '#fff',
+    fontSize: typography.fontSizeXS,
+    fontWeight: typography.fontWeightSemiBold,
+    letterSpacing: typography.letterSpacingWide,
+  },
+  headerTextBlock: {
+    alignItems: 'center',
+    paddingHorizontal: spacing.base,
+  },
+  stepDotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  stepDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  stepDotHeader: {
+    backgroundColor: 'rgba(255, 255, 255, 0.35)',
+  },
+  stepDotActiveHeader: {
+    backgroundColor: '#fff',
+    width: 24,
+    borderRadius: 4,
   },
   title: {
     fontSize: typography.fontSize2XL,
     fontWeight: typography.fontWeightExtraBold,
-    color: colors.textPrimary,
+    color: '#fff',
     textAlign: 'center',
-    marginBottom: spacing.sm,
+    letterSpacing: typography.letterSpacingTight,
+    marginBottom: spacing.xs,
   },
   subtitle: {
-    fontSize: typography.fontSizeMD,
-    color: colors.textSecondary,
+    fontSize: typography.fontSizeSM,
+    color: 'rgba(255, 255, 255, 0.85)',
     textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: spacing.xxl,
-    paddingHorizontal: spacing.base,
-  },
-  stepRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  stepDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.border,
-  },
-  stepDotActive: {
-    backgroundColor: colors.primary,
-    width: 22,
-    borderRadius: 5,
-  },
-  stepHint: {
-    fontSize: typography.fontSizeXS,
-    fontWeight: typography.fontWeightSemiBold,
-    color: colors.textMuted,
-    marginBottom: spacing.sm,
+    lineHeight: 20,
   },
 
-  /* ── Photo ───────────────────────────────────────── */
+  /* ── Bottom section ──────────────────────── */
+  bottomSection: {
+    flex: 1,
+    marginTop: -(spacing.xxl + spacing.sm),
+  },
+  scrollView: { flex: 1 },
+  scroll: {
+    flexGrow: 1,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xxl,
+  },
+  card: {
+    backgroundColor: colors.background,
+    borderRadius: 28,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.xl,
+    shadowColor: '#1E1B4B',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.1,
+    shadowRadius: 30,
+    elevation: 10,
+    marginBottom: spacing.xl,
+  },
+  fieldLabel: {
+    fontSize: typography.fontSizeSM,
+    fontWeight: typography.fontWeightSemiBold,
+    color: colors.textPrimary,
+    marginBottom: spacing.md,
+    letterSpacing: typography.letterSpacingWide,
+  },
+
+  /* ── Photo ─────────────────────────────────── */
   photoSection: {
     alignItems: 'center',
-    marginBottom: spacing.xxl,
-    gap: spacing.md,
+    marginBottom: spacing.xl,
+    gap: spacing.sm,
   },
   photoWrapper: {
     position: 'relative',
   },
   photoPlaceholder: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: colors.primary,
@@ -525,17 +719,17 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   photoImage: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
   },
   cameraBadge: {
     position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    bottom: 0,
+    right: 0,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2.5,
@@ -546,10 +740,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   photoActionText: {
-    fontSize: typography.fontSizeMD,
+    fontSize: typography.fontSizeSM,
     fontWeight: typography.fontWeightSemiBold,
     color: colors.primary,
-    textDecorationLine: 'underline',
   },
   inlineError: {
     flexDirection: 'row',
@@ -561,49 +754,46 @@ const styles = StyleSheet.create({
     color: colors.error,
   },
 
-  /* ── Card ─────────────────────────────────────────── */
-  card: {
-    width: '100%',
-    backgroundColor: colors.background,
-    borderRadius: 28,
-    padding: spacing.xl,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.07,
-    shadowRadius: 20,
-    elevation: 5,
-    marginBottom: spacing.xxl,
-  },
-  ctaButton: {
-    width: '100%',
-    marginTop: spacing.sm,
-    marginBottom: spacing.base,
-  },
+  /* ── Helper / CTA ──────────────────────────── */
   helperRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+    marginBottom: spacing.xl,
+    paddingHorizontal: spacing.xs,
+  },
+  helperIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: `${colors.primary}14`,
+    alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.xs,
   },
   helperText: {
     fontSize: typography.fontSizeXS,
     color: colors.textMuted,
+    flex: 1,
+    lineHeight: 16,
   },
+  ctaButton: { width: '100%' },
 
-  /* ── Progress ─────────────────────────────────────── */
+  /* ── Progress ──────────────────────────────── */
   progressHint: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+    paddingHorizontal: spacing.md,
   },
   progressStep: {
     alignItems: 'center',
     gap: 4,
   },
   progressDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: colors.dotInactive,
     alignItems: 'center',
     justifyContent: 'center',
@@ -613,12 +803,17 @@ const styles = StyleSheet.create({
   },
   progressDotActive: {
     backgroundColor: colors.primary,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   progressLine: {
     flex: 1,
     height: 2,
     backgroundColor: colors.border,
-    minWidth: 40,
+    minWidth: 30,
     marginBottom: 16,
   },
   progressLabel: {
