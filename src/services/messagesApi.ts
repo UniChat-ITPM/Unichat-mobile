@@ -83,6 +83,29 @@ export async function fetchConversationMessages(
   return normalizeMessagesPage(data);
 }
 
+/** Loads all pages until `nextCursor` is empty (bounded to avoid runaway loops). */
+export async function fetchAllConversationMessages(
+  conversationId: string,
+  options?: { pageLimit?: number; maxPages?: number },
+): Promise<MessageDto[]> {
+  const pageLimit = options?.pageLimit ?? 80;
+  const maxPages = options?.maxPages ?? 40;
+  const all: MessageDto[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < maxPages; page += 1) {
+    const { messages, nextCursor } = await fetchConversationMessages(conversationId, {
+      limit: pageLimit,
+      cursor,
+    });
+    all.push(...messages);
+    if (!nextCursor || messages.length === 0) {
+      break;
+    }
+    cursor = nextCursor;
+  }
+  return all;
+}
+
 export async function markConversationViewed(conversationId: string): Promise<void> {
   await apiClient.patch(`${BASE}/conversation/${conversationId}/viewed`);
 }

@@ -12,6 +12,7 @@ import MainTabNavigator from './MainTabNavigator';
 import ChatScreen from '../screens/ChatScreen';
 import NewChatScreen from '../screens/NewChatScreen';
 import ParticipantProfileScreen from '../screens/ParticipantProfileScreen';
+import ConversationMediaScreen from '../screens/ConversationMediaScreen';
 import EditGroupScreen from '../screens/EditGroupScreen';
 import CallScreen from '../screens/CallScreen';
 import { SCREENS } from "../constants";
@@ -69,6 +70,7 @@ const AppNavigator = () => {
         <Stack.Screen name={SCREENS.CHAT} component={ChatScreen} />
         <Stack.Screen name={SCREENS.NEW_CHAT} component={NewChatScreen} />
         <Stack.Screen name={SCREENS.PARTICIPANT_PROFILE} component={ParticipantProfileScreen} />
+        <Stack.Screen name={SCREENS.CONVERSATION_MEDIA} component={ConversationMediaScreen} />
         <Stack.Screen name={SCREENS.EDIT_GROUP} component={EditGroupScreen} />
         <Stack.Screen name={SCREENS.CALL} component={CallScreen} />
       </Stack.Navigator>

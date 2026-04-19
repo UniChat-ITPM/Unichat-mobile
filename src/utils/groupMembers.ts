@@ -48,6 +48,7 @@ export function mapParticipantsToGroupMemberList(
     return {
       userId,
       title,
+      role,
       roleLabel: roleLabel(role),
       avatarUrl,
       isSelf: Boolean(selfUserId && userId === selfUserId),

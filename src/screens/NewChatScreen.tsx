@@ -23,6 +23,7 @@ import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { spacing } from '../theme/spacing';
 import {
+  addConversationParticipants,
   conversationsErrorMessage,
   createGroupConversation,
   createPrivateConversation,
@@ -53,7 +54,12 @@ function isLikelyUuid(s: string): boolean {
   );
 }
 
-type NewChatScreenParams = { startInGroupMode?: boolean };
+export type NewChatScreenParams = {
+  startInGroupMode?: boolean;
+  /** When set, picker adds users to an existing group (admin flow). */
+  addToGroupConversationId?: string;
+  existingMemberUserIds?: string[];
+};
 
 type RootStackParamList = {
   [SCREENS.NEW_CHAT]: NewChatScreenParams | undefined;
@@ -74,8 +80,14 @@ const NewChatScreen = ({
   route: NewChatRoute;
 }) => {
   const { user, accessToken } = useAuth();
-  const startInGroupMode = Boolean(
-    (route.params as NewChatScreenParams | undefined)?.startInGroupMode,
+  const routeParams = (route.params ?? {}) as NewChatScreenParams;
+  const startInGroupMode = Boolean(routeParams.startInGroupMode);
+  const addToGroupConversationId = routeParams.addToGroupConversationId;
+  const existingMemberUserIds = routeParams.existingMemberUserIds ?? [];
+  const isAddMembersMode = Boolean(addToGroupConversationId);
+  const existingMemberIdSet = useMemo(
+    () => new Set(existingMemberUserIds),
+    [existingMemberUserIds],
   );
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -83,7 +95,9 @@ const NewChatScreen = ({
   const [loadPhase, setLoadPhase] = useState<'idle' | 'loading' | 'done'>('idle');
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [groupPickMode, setGroupPickMode] = useState(startInGroupMode);
+  const [groupPickMode, setGroupPickMode] = useState(
+    () => startInGroupMode || isAddMembersMode,
+  );
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(() => new Set());
   const [userIdExpanded, setUserIdExpanded] = useState(false);
   const [participantUserId, setParticipantUserId] = useState('');
@@ -258,6 +272,26 @@ const NewChatScreen = ({
     }
   }, [navigation, selectedUserIds, groupTitle, selectedImage]);
 
+  const addMembersToGroup = useCallback(async () => {
+    if (!addToGroupConversationId) return;
+    const ids = Array.from(selectedUserIds).filter((id) => !existingMemberIdSet.has(id));
+    if (ids.length === 0) {
+      Alert.alert('Select members', 'Choose at least one person who is not already in the group.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await addConversationParticipants(addToGroupConversationId, {
+        participantUserIds: ids,
+      });
+      navigation.goBack();
+    } catch (e) {
+      Alert.alert('Could not add members', conversationsErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [addToGroupConversationId, selectedUserIds, existingMemberIdSet, navigation]);
+
   const toggleSelected = useCallback((id: string) => {
     setSelectedUserIds((prev) => {
       const next = new Set(prev);
@@ -268,11 +302,15 @@ const NewChatScreen = ({
   }, []);
 
   const exitGroupMode = useCallback(() => {
+    if (isAddMembersMode) {
+      navigation.goBack();
+      return;
+    }
     setGroupPickMode(false);
     setSelectedUserIds(new Set());
     setGroupTitle('');
     setSelectedImage(null);
-  }, []);
+  }, [isAddMembersMode, navigation]);
 
   const scrollToLetter = useCallback(
     (letter: string) => {
@@ -295,7 +333,7 @@ const NewChatScreen = ({
   const ListHeader = useCallback(
     () => (
       <>
-        {groupPickMode && (
+        {groupPickMode && !isAddMembersMode && (
           <View style={styles.groupSetupCard}>
             <TouchableOpacity onPress={handlePickImage} style={styles.groupPhotoBtn} disabled={busy}>
               {selectedImage ? (
@@ -429,6 +467,7 @@ const NewChatScreen = ({
       groupTitle,
       selectedImage,
       handlePickImage,
+      isAddMembersMode,
     ],
   );
 
@@ -443,7 +482,9 @@ const NewChatScreen = ({
           ) : (
             <View style={styles.headerSideSpacer} />
           )}
-          <Text style={styles.headerTitle}>{groupPickMode ? 'New group' : 'New chat'}</Text>
+          <Text style={styles.headerTitle}>
+            {groupPickMode ? (isAddMembersMode ? 'Add members' : 'New group') : 'New chat'}
+          </Text>
           <TouchableOpacity style={styles.closeCircle} onPress={() => navigation.goBack()} activeOpacity={0.85}>
             <Ionicons name="close" size={22} color={colors.textPrimary} />
           </TouchableOpacity>
@@ -477,22 +518,27 @@ const NewChatScreen = ({
             )}
             renderItem={({ item }) => {
               const selected = selectedUserIds.has(item.userId);
+              const alreadyInGroup = isAddMembersMode && existingMemberIdSet.has(item.userId);
+              const showCheckOn = selected || alreadyInGroup;
               return (
                 <TouchableOpacity
-                  style={styles.contactRow}
+                  style={[styles.contactRow, alreadyInGroup && styles.contactRowMuted]}
                   activeOpacity={0.85}
                   onPress={() => {
                     if (groupPickMode) {
+                      if (alreadyInGroup) return;
                       toggleSelected(item.userId);
                     } else {
                       void openChat(item.userId, item.displayName);
                     }
                   }}
-                  disabled={busy}
+                  disabled={busy || alreadyInGroup}
                 >
                   {groupPickMode ? (
-                    <View style={[styles.checkCircle, selected && styles.checkCircleOn]}>
-                      {selected ? <Ionicons name="checkmark" size={16} color={colors.textLight} /> : null}
+                    <View style={[styles.checkCircle, showCheckOn && styles.checkCircleOn]}>
+                      {showCheckOn ? (
+                        <Ionicons name="checkmark" size={16} color={colors.textLight} />
+                      ) : null}
                     </View>
                   ) : null}
                   {item.profilePhoto ? (
@@ -508,7 +554,11 @@ const NewChatScreen = ({
                     <Text style={styles.contactName} numberOfLines={1}>
                       {item.displayName}
                     </Text>
-                    {item.username ? (
+                    {alreadyInGroup ? (
+                      <Text style={styles.contactSub} numberOfLines={1}>
+                        Already in this group
+                      </Text>
+                    ) : item.username ? (
                       <Text style={styles.contactSub} numberOfLines={1}>
                         @{item.username}
                       </Text>
@@ -544,15 +594,29 @@ const NewChatScreen = ({
         {groupPickMode ? (
           <View style={styles.groupFooter}>
             <TouchableOpacity
-              style={[styles.groupCta, selectedUserIds.size === 0 && styles.groupCtaDisabled]}
-              onPress={createGroup}
-              disabled={busy || selectedUserIds.size === 0}
+              style={[
+                styles.groupCta,
+                (isAddMembersMode
+                  ? Array.from(selectedUserIds).filter((id) => !existingMemberIdSet.has(id)).length === 0
+                  : selectedUserIds.size === 0) && styles.groupCtaDisabled,
+              ]}
+              onPress={isAddMembersMode ? addMembersToGroup : createGroup}
+              disabled={
+                busy ||
+                (isAddMembersMode
+                  ? Array.from(selectedUserIds).filter((id) => !existingMemberIdSet.has(id)).length === 0
+                  : selectedUserIds.size === 0)
+              }
               activeOpacity={0.85}
             >
               {busy ? (
                 <ActivityIndicator color={colors.textLight} />
               ) : (
-                <Text style={styles.groupCtaText}>Create group ({selectedUserIds.size})</Text>
+                <Text style={styles.groupCtaText}>
+                  {isAddMembersMode
+                    ? `Add (${Array.from(selectedUserIds).filter((id) => !existingMemberIdSet.has(id)).length})`
+                    : `Create group (${selectedUserIds.size})`}
+                </Text>
               )}
             </TouchableOpacity>
           </View>
@@ -787,6 +851,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.backgroundSecondary,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
+  },
+  contactRowMuted: {
+    opacity: 0.55,
   },
   checkCircle: {
     width: 24,

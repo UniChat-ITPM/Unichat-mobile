@@ -17,10 +17,17 @@ export interface MappedChatTextMessage {
   sentAtMs?: number;
   quote?: MappedQuote;
   imageUri?: string;
+  /** True when attachment is VIDEO (thumbnail still uses imageUri / video URL). */
+  isVideo?: boolean;
+  /** Duration in seconds for video attachments. */
+  videoDurationSec?: number;
   voiceUri?: string;
   voiceDurationSec?: number;
   docName?: string;
   docMimeType?: string;
+  docSizeBytes?: number;
+  /** Download/preview URL for document attachments when available. */
+  docUri?: string;
 }
 
 export type MessageMapContext = {
@@ -71,7 +78,18 @@ function messageBodyFromDto(msg: MessageDto): string {
 }
 
 function mediaFieldsFromDto(msg: MessageDto): Partial<
-  Pick<MappedChatTextMessage, 'imageUri' | 'voiceUri' | 'voiceDurationSec' | 'docName' | 'docMimeType'>
+  Pick<
+    MappedChatTextMessage,
+    | 'imageUri'
+    | 'isVideo'
+    | 'videoDurationSec'
+    | 'voiceUri'
+    | 'voiceDurationSec'
+    | 'docName'
+    | 'docMimeType'
+    | 'docSizeBytes'
+    | 'docUri'
+  >
 > {
   const raw = msg.attachments;
   if (!Array.isArray(raw) || raw.length === 0) {
@@ -85,6 +103,7 @@ function mediaFieldsFromDto(msg: MessageDto): Partial<
       originalFileName?: string;
       mimeType?: string;
       durationSeconds?: number | null;
+      sizeBytes?: number | null;
     };
   };
   const sorted = [...(raw as Att[])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
@@ -97,7 +116,11 @@ function mediaFieldsFromDto(msg: MessageDto): Partial<
     return { imageUri: asset.secureUrl };
   }
   if (mt === 'VIDEO') {
-    return { imageUri: asset.secureUrl };
+    return {
+      imageUri: asset.secureUrl,
+      isVideo: true,
+      videoDurationSec: Math.max(0, Number(asset.durationSeconds) || 0),
+    };
   }
   if (mt === 'AUDIO') {
     return {
@@ -106,9 +129,12 @@ function mediaFieldsFromDto(msg: MessageDto): Partial<
     };
   }
   if (mt === 'DOCUMENT') {
+    const sz = asset.sizeBytes;
     return {
       docName: asset.originalFileName ?? 'File',
       docMimeType: asset.mimeType,
+      ...(asset.secureUrl ? { docUri: asset.secureUrl } : {}),
+      ...(typeof sz === 'number' && Number.isFinite(sz) ? { docSizeBytes: sz } : {}),
     };
   }
   return { imageUri: asset.secureUrl };

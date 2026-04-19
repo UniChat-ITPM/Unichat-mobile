@@ -2,6 +2,8 @@ export type GroupMemberListItem = {
   userId: string;
   /** Resolved primary line (display name or username) */
   title: string;
+  /** API participant role: OWNER | ADMIN | MEMBER */
+  role: string;
   /** Role label e.g. Owner, Admin */
   roleLabel: string | null;
   avatarUrl: string | null;

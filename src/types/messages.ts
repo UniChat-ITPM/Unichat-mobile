@@ -31,6 +31,7 @@ export interface MessageDto {
       originalFileName?: string;
       mimeType?: string;
       durationSeconds?: number | null;
+      sizeBytes?: number | null;
     };
   }> | null;
   status?: string | null;
